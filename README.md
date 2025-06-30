@@ -37,6 +37,7 @@ gw-mist/
 ├── docs/                   # Documentation
 ├── examples/               # Example scripts and tutorials
 ├── config/                 # Configuration files
+├── papers/                 # Relevant research papers. Stored as arxiv-2xxx.xxxx.pdf for easy reference.
 └── data/                   # Data directory (not tracked)
 ```
 
