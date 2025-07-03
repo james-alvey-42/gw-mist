@@ -96,3 +96,18 @@ def do_ticks(list_of_axes):
         ax.minorticks_on()
         ax.tick_params(top=True,right=True, direction='in', length=7, which='major')
         ax.tick_params(top=True,right=True, direction='in', length=4, which='minor')
+
+
+### FIXING TOOLS FOR GWPY SETTINGS ###
+def fix_frame(ax):
+    ax.tick_params(color='black', labelcolor='black')
+    ax.spines[:].set_color('black')
+    ax.spines[:].set_linewidth(1)
+    return True
+
+def fix_plot(a):
+    for axes in a:
+        axes.grid(False)
+        do_ticks([axes])
+        fix_frame(axes)
+    return True
