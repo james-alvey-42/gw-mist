@@ -88,3 +88,6 @@ wandb/
 *.gz
 *.tar
 *.zip
+
+# Prevent PNG backup
+notebooks/week1/out/
