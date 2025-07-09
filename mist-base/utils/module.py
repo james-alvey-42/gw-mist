@@ -29,9 +29,17 @@ class BaseModule(pl.LightningModule):
         self.learning_rate = learning_rate
         self.lr_scheduler_name = lr_scheduler_name
         
-        # Default parameters for each scheduler
+        # Default parameters for each scheduler - old hashed out 9/jul
+        # default_scheduler_params = {
+        #     'ReduceLROnPlateau': {'factor': 0.5, 'patience': 5, 'verbose': True},
+        #     'OneCycleLR': {'max_lr': learning_rate, 'div_factor': 25.0, 'final_div_factor': 1e4},
+        #     'CyclicLR': {'base_lr': learning_rate / 10 if learning_rate is not None else 0.001, 'max_lr': learning_rate, 'mode': 'triangular'},
+        #     'ExponentialLR': {'gamma': 0.9},
+        #     'CosineAnnealingLR': {'T_max': 50, 'eta_min': 0},
+        # }
+
         default_scheduler_params = {
-            'ReduceLROnPlateau': {'factor': 0.5, 'patience': 5, 'verbose': True},
+            'ReduceLROnPlateau': {'factor': 0.5, 'patience': 5},
             'OneCycleLR': {'max_lr': learning_rate, 'div_factor': 25.0, 'final_div_factor': 1e4},
             'CyclicLR': {'base_lr': learning_rate / 10 if learning_rate is not None else 0.001, 'max_lr': learning_rate, 'mode': 'triangular'},
             'ExponentialLR': {'gamma': 0.9},
@@ -123,10 +131,16 @@ class BaseModule(pl.LightningModule):
         Returns:
             list: A list of callbacks.
         """
+        ### old version hashed out 9-jul
+        # early_stop_callback = pl.callbacks.EarlyStopping(
+        #     monitor='val_loss',
+        #     patience=self.early_stopping_patience,
+        #     verbose=True,
+        #     mode='min',
+        # )
         early_stop_callback = pl.callbacks.EarlyStopping(
             monitor='val_loss',
             patience=self.early_stopping_patience,
-            verbose=True,
             mode='min',
         )
         checkpoint_callback = pl.callbacks.ModelCheckpoint(
@@ -260,7 +274,73 @@ class CustomLossModule(BaseModule):
         return optimizer
     
     
-class CustomLossModule_withBounds(CustomLossModule):
+# class CustomLossModule_withBounds(CustomLossModule):
+#     def __init__(
+#         self,
+#         model,
+#         learning_rate: float = None,
+#         lr_scheduler_name: str = 'ReduceLROnPlateau',
+#         lr_scheduler_params: dict = None,
+#         early_stopping_patience: int = 7,
+#         checkpoint_filename: str = '{epoch}-{val_loss:.2f}',
+#     ):
+#         super().__init__(
+#             model,
+#             learning_rate, 
+#             lr_scheduler_name, 
+#             lr_scheduler_params,
+#             early_stopping_patience,
+#             checkpoint_filename
+#         )
+        
+#         self.train_loss_history = []
+#         self.bounds_history = []
+#         ##### NEW ADDITION ######
+#         self.training_step_outputs = []
+#         ##########################
+
+#     def training_step(self, batch, batch_idx):
+#         loss = self.model(batch)
+#         bounds = self.model.bounds()
+#         self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+#         if isinstance(bounds, float) or bounds.numel() == 1:
+#             self.log(f"bounds", bounds, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+#         else:
+#             for i_b in range(len(bounds)):
+#                 self.log(f"bounds{i_b}", bounds[i_b], on_step=False, on_epoch=True, prog_bar=True, logger=True)
+
+#         ##### NEW ADDITION ######
+#         self.training_step_outputs.append(loss)
+#         ##########################
+#         return loss
+        
+#     ############# HASHED OUT #########################
+#     # def training_epoch_end(self, outputs):
+#     #     bounds = self.model.bounds()
+#     #     # Append to history
+#     #     self.train_loss_history.append(
+#     #         self.trainer.callback_metrics['train_loss']
+#     #     )
+#     #     if isinstance(bounds, float) or bounds.numel() == 1:
+#     #         self.bounds_history.append(self.trainer.callback_metrics[f'bounds'])
+#     #     else:
+#     #         self.bounds_history.append(
+#     #             torch.stack([self.trainer.callback_metrics[f'bounds{i_b}'] for i_b in range(len(bounds))], dim=0)
+#     #         )
+#     ####################################################
+#     def on_train_epoch_end(self):
+#         bounds = self.model.bounds()
+#         epoch_average = torch.stack(self.training_step_outputs).mean()
+#         self.log("training_epoch_average", epoch_average)
+#         if isinstance(bounds, float) or bounds.numel() == 1:
+#             self.bounds_history.append(self.trainer.callback_metrics[f'bounds'])
+#         else:
+#             self.bounds_history.append(
+#                 torch.stack([self.trainer.callback_metrics[f'bounds{i_b}'] for i_b in range(len(bounds))], dim=0))
+#         self.training_step_outputs.clear()  # free memory
+
+
+class CustomLossModule_withBounds(pl.LightningModule):
     def __init__(
         self,
         model,
@@ -270,39 +350,75 @@ class CustomLossModule_withBounds(CustomLossModule):
         early_stopping_patience: int = 7,
         checkpoint_filename: str = '{epoch}-{val_loss:.2f}',
     ):
-        super().__init__(
-            model,
-            learning_rate, 
-            lr_scheduler_name, 
-            lr_scheduler_params,
-            early_stopping_patience,
-            checkpoint_filename
-        )
-        
+        super().__init__()
+        self.model = model
+        self.learning_rate = learning_rate or 3e-3
+        self.lr_scheduler_name = lr_scheduler_name
+        self.lr_scheduler_params = lr_scheduler_params or {}
+        self.early_stopping_patience = early_stopping_patience
+        self.checkpoint_filename = checkpoint_filename
+
         self.train_loss_history = []
         self.bounds_history = []
+        self.training_step_outputs = []
+
+    def forward(self, batch):
+        return self.model(batch)
 
     def training_step(self, batch, batch_idx):
         loss = self.model(batch)
         bounds = self.model.bounds()
+
         self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+
         if isinstance(bounds, float) or bounds.numel() == 1:
-            self.log(f"bounds", bounds, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+            self.log("bounds", bounds, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         else:
             for i_b in range(len(bounds)):
                 self.log(f"bounds{i_b}", bounds[i_b], on_step=False, on_epoch=True, prog_bar=True, logger=True)
+
+        self.training_step_outputs.append(loss)
         return loss
-    
-    def training_epoch_end(self, outputs):
+
+    def on_train_epoch_end(self):
+        epoch_average = torch.stack(self.training_step_outputs).mean()
+        self.log("training_epoch_average", epoch_average)
+
         bounds = self.model.bounds()
-        # Append to history
-        self.train_loss_history.append(
-            self.trainer.callback_metrics['train_loss']
-        )
         if isinstance(bounds, float) or bounds.numel() == 1:
-            self.bounds_history.append(self.trainer.callback_metrics[f'bounds'])
+            self.bounds_history.append(self.trainer.callback_metrics["bounds"])
         else:
             self.bounds_history.append(
-                torch.stack([self.trainer.callback_metrics[f'bounds{i_b}'] for i_b in range(len(bounds))], dim=0)
+                torch.stack(
+                    [self.trainer.callback_metrics[f"bounds{i_b}"] for i_b in range(len(bounds))],
+                    dim=0
+                )
             )
+        if "train_loss" in self.trainer.callback_metrics:
+            self.train_loss_history.append(self.trainer.callback_metrics["train_loss"].detach().cpu())
+
+
+        self.training_step_outputs.clear()
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
+
+        if self.lr_scheduler_name == 'ReduceLROnPlateau':
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer,
+                patience=self.lr_scheduler_params.get('patience', 5),
+                factor=self.lr_scheduler_params.get('factor', 0.5)
+            )
+            return {
+                'optimizer': optimizer,
+                'lr_scheduler': {
+                    'scheduler': scheduler,
+                    'monitor': 'train_loss',
+                    'interval': 'epoch',
+                    'frequency': 1
+                }
+            }
+        else:
+            return optimizer
+
         
