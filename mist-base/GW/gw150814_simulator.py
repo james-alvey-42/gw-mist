@@ -57,7 +57,7 @@ class GW150814:
         self.ifo = self.settings.get("ifo", "H1")
         self.tukey_alpha = self.settings.get("tukey_alpha", 0.2)
         self.posterior_samples_path = self.settings.get(
-            "posterior_samples_path", "GW150814_posterior_samples.npz"
+            "posterior_samples_path", "../../mist-base/GW/GW150814_posterior_samples.npz"
         )
 
     def load_data(self):
@@ -302,7 +302,10 @@ class GW150814_Additive(GW150814):
         
     @property
     def Nbins(self):
-        return self.gw150814_samples['mu'].shape[1]
+        #### modified 14th Jul #####
+        # return self.gw150814_samples['mu'].shape[1]
+        return self.gw150814_samples['mu'].shape[0]
+
         
     def get_mu(self) -> torch.Tensor:
         idx = self.mu_rng.integers(0, self.gw150814_samples['mu'].shape[0])
