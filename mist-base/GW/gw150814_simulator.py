@@ -304,7 +304,7 @@ class GW150814_Additive(GW150814):
     def Nbins(self):
         #### modified 14th Jul #####
         # return self.gw150814_samples['mu'].shape[1]
-        return self.gw150814_samples['mu'].shape[0]
+        return self.gw150814_samples['mu'].shape[1]
 
         
     def get_mu(self) -> torch.Tensor:
