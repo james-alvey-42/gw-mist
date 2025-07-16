@@ -92,3 +92,4 @@ wandb/
 # Prevent PNG backup
 notebooks/week1/out/
 notebooks/week2/out/
+notebooks/week3/out/
