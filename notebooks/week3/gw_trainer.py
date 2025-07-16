@@ -5,7 +5,7 @@ parser = argparse.ArgumentParser(description='Example script')
 parser.add_argument('--epochs', type=int, default=20, help='Number of training epochs')
 parser.add_argument('--name', type=str, help='Path to save model')
 parser.add_argument('--correlated', type=bool, default=False, help='Whether the model is trained on correlated distortions')
-parser.add_argument('--mac', type=bool, default=True, help='Is this being run on my mac?')
+parser.add_argument('--mac', type=bool, default=False, help='Is this being run on my mac?')
 parser.add_argument('--graph_verb', type=bool, default=False, help='Show validation Graphs?')
 args = parser.parse_args()
 
@@ -52,6 +52,10 @@ else:
     dev = 'gpu'
     def to_device(nn):
         nn.cuda().eval
+
+print(f'args.mac reads {args.mac}')
+print(f'Running at {prec[1]}-bit precision on {dev}')
+
 #### - LOAD THE DATA IN - ###
 
 gen_samples = np.load('generated_samples.npz')
