@@ -4,9 +4,9 @@ import argparse
 parser = argparse.ArgumentParser(description='Example script')
 parser.add_argument('--epochs', type=int, default=20, help='Number of training epochs')
 parser.add_argument('--name', type=str, help='Path to save model')
-parser.add_argument('--correlated', type=bool, default=False, help='Whether the model is trained on correlated distortions')
-parser.add_argument('--mac', type=bool, default=False, help='Is this being run on my mac?')
-parser.add_argument('--graph_verb', type=bool, default=False, help='Show validation Graphs?')
+parser.add_argument('--correlated', action='store_true', help='Whether the model is trained on correlated distortions')
+parser.add_argument('--mac', action='store_true', help='Is this being run on my mac?')
+parser.add_argument('--graph_verb', action='store_true', help='Show validation Graphs?')
 args = parser.parse_args()
 
 import sys
@@ -40,6 +40,7 @@ from utils.data import OnTheFlyDataModule, StoredDataModule
 from utils.module import CustomLossModule_withBounds, BCELossModule
 
 mycolors = ['#77aca2', '#ff004f', '#f98e08']
+bs = 16
 
 #### SORTING ARGS OUT ####
 if args.mac:
@@ -175,7 +176,7 @@ if args.correlated:
         sample = {k: v for k, v in sample.items()}
         return sample
 
-    batch_size = 128
+    batch_size = bs
     dm = OnTheFlyDataModule(simulator, Nsims_per_epoch=500*batch_size, batch_size=batch_size)
     network = Network1D(correlation_scales)
     model = CustomLossModule_withBounds(network)
@@ -186,8 +187,8 @@ if args.correlated:
         # fast_dev_run=True
     )
     trainer.fit(model, dm)
-    torch.save(model, 'out/'+args.name+'_uc_model')
-    torch.save(network, 'out/'+args.name+'_uc_network')
+    torch.save(model, 'out/'+args.name+'_c_model')
+    torch.save(network, 'out/'+args.name+'_c_network')
     to_device(network)
 
 else:
@@ -235,7 +236,7 @@ else:
         sample = {k: v for k, v in sample.items()}
         return sample
 
-    batch_size = 128
+    batch_size = bs
     # dm = StoredDataModule(samples, batch_size=batch_size, on_after_load_sample=resample)
     dm = OnTheFlyDataModule(simulator, Nsims_per_epoch=400*batch_size, batch_size=batch_size)
     network_SNR = Network_SNR()
@@ -247,8 +248,6 @@ else:
         # fast_dev_run=True
     )
     trainer.fit(model_SNR, dm)
-    torch.save(model_SNR, args.name+'uc_model')
-    torch.save(network_SNR, args.name+'uc_network')
+    torch.save(model_SNR, 'out/'+args.name+'_uc_model')
+    torch.save(network_SNR, 'out/'+args.name+'_uc_network')
     to_device(network_SNR)
-
-## test ###
