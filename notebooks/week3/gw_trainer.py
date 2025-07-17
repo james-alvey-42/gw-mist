@@ -250,3 +250,5 @@ else:
     torch.save(model_SNR, args.name+'uc_model')
     torch.save(network_SNR, args.name+'uc_network')
     to_device(network_SNR)
+
+## test ##
