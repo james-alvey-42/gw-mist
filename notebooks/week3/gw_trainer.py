@@ -19,7 +19,10 @@ from gw150814_simulator import GW150814, defaults, GW150814_Additive
 # import module
 
 import torch
+torch.set_float32_matmul_precision('medium')
 import numpy as np
+import multiprocessing as mp
+# mp.set_start_method("spawn", force=True)
 import scipy
 import scipy.stats
 import pytorch_lightning as pl
@@ -46,16 +49,22 @@ bs = 16
 if args.mac:
     prec = [torch.float32,32]
     dev = 'mps'
+    wkrs = 0
     def to_device(nn):
         nn.to(device='mps', dtype=torch.float32).eval()
 else:
     prec = [torch.float64,64]
     dev = 'gpu'
+    wkrs = 31
     def to_device(nn):
         nn.cuda().eval
 
-print(f'args.mac reads {args.mac}')
-print(f'Running at {prec[1]}-bit precision on {dev}')
+corr_marker = 'correlated' if args.correlated else 'uncorrelated'
+title_marker = f'[BLANK]' if args.name==None else args.name
+
+
+print(f'Running a '+corr_marker+f' simulation of {args.epochs} epochs.')
+print(f'you are running at {prec[1]}-bit precision on {dev}. Title:'+title_marker)
 
 #### - LOAD THE DATA IN - ###
 
@@ -177,7 +186,7 @@ if args.correlated:
         return sample
 
     batch_size = bs
-    dm = OnTheFlyDataModule(simulator, Nsims_per_epoch=500*batch_size, batch_size=batch_size)
+    dm = OnTheFlyDataModule(simulator, Nsims_per_epoch=500*batch_size, batch_size=batch_size,num_workers=wkrs)
     network = Network1D(correlation_scales)
     model = CustomLossModule_withBounds(network)
     trainer = pl.Trainer(
@@ -187,8 +196,8 @@ if args.correlated:
         # fast_dev_run=True
     )
     trainer.fit(model, dm)
-    torch.save(model, 'out/'+args.name+'_c_model')
-    torch.save(network, 'out/'+args.name+'_c_network')
+    torch.save(model, 'out/'+title_marker+'_c_model')
+    torch.save(network, 'out/'+title_marker+'_c_network')
     to_device(network)
 
 else:
@@ -238,7 +247,7 @@ else:
 
     batch_size = bs
     # dm = StoredDataModule(samples, batch_size=batch_size, on_after_load_sample=resample)
-    dm = OnTheFlyDataModule(simulator, Nsims_per_epoch=400*batch_size, batch_size=batch_size)
+    dm = OnTheFlyDataModule(simulator, Nsims_per_epoch=400*batch_size, batch_size=batch_size, num_workers=wkrs)
     network_SNR = Network_SNR()
     model_SNR = CustomLossModule_withBounds(network_SNR, learning_rate=8e-3)
     trainer = pl.Trainer(
@@ -248,6 +257,6 @@ else:
         # fast_dev_run=True
     )
     trainer.fit(model_SNR, dm)
-    torch.save(model_SNR, 'out/'+args.name+'_uc_model')
-    torch.save(network_SNR, 'out/'+args.name+'_uc_network')
+    torch.save(model_SNR, 'out/'+title_marker+'_uc_model')
+    torch.save(network_SNR, 'out/'+title_marker+'_uc_network')
     to_device(network_SNR)
