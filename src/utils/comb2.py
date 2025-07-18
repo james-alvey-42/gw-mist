@@ -1,13 +1,9 @@
 import numpy as np
 from scipy.signal import welch
-# gwpy is an optional dependency, required for this function.
-# Please install it using: pip install gwpy
-try:
-    from gwpy.timeseries import TimeSeries
-except ImportError:
-    print("Warning: 'gwpy' package not found. The Comb2 function will not be usable.")
-    print("Please install it using: pip install gwpy")
-    TimeSeries = None
+from gwpy.timeseries import TimeSeries
+
+#### - COMMENTS PROVIDED BY GEMINI-2.6-PRO - ####
+
 
 def Comb2(
     sample_rate: float,
@@ -127,57 +123,57 @@ def Comb2(
 
     return psd_noise, psd_with_comb, freqs, comb_on_ones_timeseries
 
-if __name__ == '__main__':
-    import matplotlib.pyplot as plt
+# if __name__ == '__main__':
+#     import matplotlib.pyplot as plt
 
-    # --- Simulation Parameters ---
-    sample_rate = 4096  # Hz
-    f0 = 100  # Fundamental frequency in Hz
-    df = 50  # Spacing in Hz
-    nf = 20   # Number of harmonics
+#     # --- Simulation Parameters ---
+#     sample_rate = 4096  # Hz
+#     f0 = 100  # Fundamental frequency in Hz
+#     df = 50  # Spacing in Hz
+#     nf = 20   # Number of harmonics
 
-    # --- Generate the comb and noise PSDs ---
-    try:
-        psd_noise, psd_with_comb, freqs, comb_ts = Comb2(
-            sample_rate=sample_rate,
-            f0=f0,
-            df=df,
-            nf=nf,
-            amplitude_factor=1e4, # Make peaks very prominent for plotting
-            duration=4
-        )
-    except (ImportError, Exception) as e:
-        print(f"Could not run example: {e}")
-        exit()
+#     # --- Generate the comb and noise PSDs ---
+#     try:
+#         psd_noise, psd_with_comb, freqs, comb_ts = Comb2(
+#             sample_rate=sample_rate,
+#             f0=f0,
+#             df=df,
+#             nf=nf,
+#             amplitude_factor=1e4, # Make peaks very prominent for plotting
+#             duration=4
+#         )
+#     except (ImportError, Exception) as e:
+#         print(f"Could not run example: {e}")
+#         exit()
 
-    if psd_noise.size == 0:
-        print("Failed to generate data, exiting example.")
-        exit()
+#     if psd_noise.size == 0:
+#         print("Failed to generate data, exiting example.")
+#         exit()
 
-    # --- Plot the results ---
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
-    fig.suptitle("Comb Generation with Real LIGO Noise (Comb2)", fontsize=16)
+#     # --- Plot the results ---
+#     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
+#     fig.suptitle("Comb Generation with Real LIGO Noise (Comb2)", fontsize=16)
 
-    # Plot the PSDs
-    ax1.set_title("Power Spectral Densities")
-    ax1.loglog(freqs, psd_noise, label="Original L1 Noise PSD", alpha=0.7)
-    ax1.loglog(freqs, psd_with_comb, label="Noise PSD with Comb", alpha=0.9)
-    ax1.set_ylabel("PSD (strain$^2$/Hz)")
-    ax1.legend()
-    ax1.grid(True, which="both", ls=":")
-    ax1.set_xlim(20, sample_rate / 2)
+#     # Plot the PSDs
+#     ax1.set_title("Power Spectral Densities")
+#     ax1.loglog(freqs, psd_noise, label="Original L1 Noise PSD", alpha=0.7)
+#     ax1.loglog(freqs, psd_with_comb, label="Noise PSD with Comb", alpha=0.9)
+#     ax1.set_ylabel("PSD (strain$^2$/Hz)")
+#     ax1.legend()
+#     ax1.grid(True, which="both", ls=":")
+#     ax1.set_xlim(20, sample_rate / 2)
 
-    # Plot the generated time-series
-    # First, calculate the PSD of the generated timeseries to verify it matches
-    nperseg = int(sample_rate)
-    freqs_ts, psd_ts = welch(comb_ts, fs=sample_rate, nperseg=nperseg)
+#     # Plot the generated time-series
+#     # First, calculate the PSD of the generated timeseries to verify it matches
+#     nperseg = int(sample_rate)
+#     freqs_ts, psd_ts = welch(comb_ts, fs=sample_rate, nperseg=nperseg)
     
-    ax2.set_title("Verification of Generated Time Series")
-    ax2.loglog(freqs_ts, psd_ts, label="PSD of Generated Comb Timeseries")
-    ax2.set_xlabel("Frequency (Hz)")
-    ax2.set_ylabel("PSD (strain$^2$/Hz)")
-    ax2.legend()
-    ax2.grid(True, which="both", ls=":")
+#     ax2.set_title("Verification of Generated Time Series")
+#     ax2.loglog(freqs_ts, psd_ts, label="PSD of Generated Comb Timeseries")
+#     ax2.set_xlabel("Frequency (Hz)")
+#     ax2.set_ylabel("PSD (strain$^2$/Hz)")
+#     ax2.legend()
+#     ax2.grid(True, which="both", ls=":")
 
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.show()
+#     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+#     plt.show()
