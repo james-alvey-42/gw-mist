@@ -1,7 +1,8 @@
 import numpy as np
 from scipy.signal import welch
 
-def inject_ligo_comb(
+
+def Comb(
     strain_data: np.ndarray,
     sample_rate: float,
     f0: float,
@@ -13,11 +14,10 @@ def inject_ligo_comb(
     tukey_alpha: float = 0.25,
 ):
     """
-    Injects a LIGO comb signal into a strain data timeseries and computes PSDs.
-
-    Each harmonic of the comb has a fixed amplitude and a frequency with
-    lognormal jitter.
-
+    Injects a LIGO comb signal into strain data by operating in the frequency domain.
+    Each harmonic of the comb has a fixed amplitude, a random phase, and a frequency
+    with lognormal jitter. The injection is performed on the Fourier transform of the
+    data, and then converted back to a timeseries.
     Parameters:
     -----------
     strain_data : np.ndarray
@@ -31,7 +31,7 @@ def inject_ligo_comb(
     nf : int
         The number of harmonics (lines) in the comb.
     amplitude : float, optional
-        The amplitude of each harmonic. Defaults to 1000.0 as requested.
+        The amplitude of each harmonic. Defaults to 1000.0.
     jitter_sigma : float, optional
         The standard deviation of the lognormal distribution for frequency jitter.
         The jitter is applied multiplicatively. Defaults to 1e-6.
@@ -41,7 +41,6 @@ def inject_ligo_comb(
     tukey_alpha : float, optional
         The shape parameter of the Tukey window used in the Welch PSD calculation.
         Defaults to 0.25.
-
     Returns:
     --------
     freqs : np.ndarray
@@ -55,50 +54,78 @@ def inject_ligo_comb(
     combined_timeseries : np.ndarray
         The time series of the strain data with the comb injected.
     """
-    # 1. Generate time array from input strain data
+    # 1. Setup time and frequency arrays for FFT
     num_samples = len(strain_data)
-    time = np.arange(num_samples) / sample_rate
+    if num_samples == 0:
+        # Handle empty input gracefully
+        return np.array([]), np.array([]), np.array([]), np.array([]), np.copy(strain_data)
 
-    # 2. Generate the comb signal
-    comb_timeseries = np.zeros_like(strain_data)
+    fft_freqs = np.fft.rfftfreq(num_samples, d=1.0 / sample_rate)
+
+    # 2. Generate comb parameters (frequencies, phases) in a vectorized manner
     base_frequencies = f0 + np.arange(nf) * df
+    jitter_factors = np.random.lognormal(mean=0, sigma=jitter_sigma, size=nf)
+    f_jittered = base_frequencies * jitter_factors
+    phases = np.random.uniform(0, 2 * np.pi, size=nf)
 
-    for f_base in base_frequencies:
-        # Apply multiplicative lognormal jitter to the base frequency.
-        # For lognormal(mean=0, sigma), the median of the distribution is exp(0) = 1.
-        jitter_factor = np.random.lognormal(mean=0, sigma=jitter_sigma)
-        f_jittered = f_base * jitter_factor
-        comb_timeseries += amplitude * np.sin(2 * np.pi * f_jittered * time)
+    # 3. Create the comb signal in the frequency domain
+    comb_fft = np.zeros_like(fft_freqs, dtype=np.complex128)
 
-    # 3. Create the combined signal by adding the comb to the original data
-    combined_timeseries = strain_data + comb_timeseries
+    # Find the frequency bin indices for each comb harmonic
+    indices = np.searchsorted(fft_freqs, f_jittered)
 
-    # 4. Calculate PSDs using scipy.signal.welch
+    # Filter out harmonics that are outside the valid frequency range (e.g., > Nyquist)
+    valid_mask = (indices > 0) & (indices < len(fft_freqs))
+    indices = indices[valid_mask]
+    phases = phases[valid_mask]
+    
+    # Proceed only if there are valid harmonics to add
+    if indices.size > 0:
+        # Calculate the complex amplitude for the FFT bins
+        # For a real signal x(t) = A*cos(2*pi*f*t + phi), the rfft value is (A*N/2) * exp(j*phi)
+        complex_amplitudes = (amplitude * num_samples / 2) * np.exp(1j * phases)
+
+        # Add the complex amplitudes to the corresponding frequency bins.
+        # Using np.add.at handles cases where multiple jittered frequencies fall into the same bin.
+        np.add.at(comb_fft, indices, complex_amplitudes)
+
+    # 4. Transform comb to time domain and calculate PSDs
+    comb_timeseries = np.fft.irfft(comb_fft, n=num_samples)
+
+    # 5. Calculate PSDs using scipy.signal.welch for the comb
     if nperseg is None:
-        nperseg = int(sample_rate)  # Default to 1-second segments
+        nperseg = int(sample_rate)
 
     window = ("tukey", tukey_alpha)
 
-    # PSD of the comb signal alone
-    freqs, psd_comb = welch(
-        comb_timeseries,
-        fs=sample_rate,
-        window=window,
-        nperseg=nperseg,
-        noverlap=nperseg // 2,
+    welch_freqs, psd_comb = welch(
+        comb_timeseries, fs=sample_rate, window=window, nperseg=nperseg, noverlap=nperseg // 2
     )
 
-    # PSD of the combined signal
-    # The frequency bins (`freqs`) will be identical to the above call
-    _, psd_combined = welch(
-        combined_timeseries,
-        fs=sample_rate,
-        window=window,
-        nperseg=nperseg,
-        noverlap=nperseg // 2,
+    # 6. Calculate the PSD of the combined signal directly from the FFT
+    # This avoids an unnecessary inverse transform and preserves the original noise characteristics
+    strain_fft = np.fft.rfft(strain_data)
+    combined_fft = strain_fft + comb_fft
+    
+    # The PSD from an FFT is (2 / (fs * N)) * |X_k|^2 for a real signal
+    # where N is the number of points in the window (nperseg)
+    # For Welch's method, it's averaged over segments.
+    # To simplify and align with the user's goal, we will return the FFT data
+    # and let the user compute the PSD as needed, or we can provide a simplified PSD.
+    # For now, let's stick to a direct calculation that matches the Welch output scale.
+    
+    # We will calculate the PSD of the strain data and add the comb's power.
+    # This is a more direct way to get the combined PSD without IFFT->FFT.
+    _, psd_strain = welch(
+        strain_data, fs=sample_rate, window=window, nperseg=nperseg, noverlap=nperseg // 2
     )
+    psd_combined = psd_strain + psd_comb
 
-    return freqs, psd_comb, psd_combined, comb_timeseries, combined_timeseries
+    # The combined timeseries is still useful for some applications
+    combined_timeseries = np.fft.irfft(combined_fft, n=num_samples)
+    
+    extras = [combined_fft, strain_fft, comb_fft]
+    return welch_freqs, psd_comb, psd_combined, comb_timeseries, combined_timeseries, extras
 
 
 # if __name__ == "__main__":
@@ -121,9 +148,9 @@ def inject_ligo_comb(
     df = 25  # Spacing in Hz
     nf = 8   # Number of harmonics
 
-    # 3. Inject the comb using the function
-    # Note: Using a more realistic amplitude for the example plot to make it visible.
-    freqs, psd_comb, psd_combined, comb_ts, combined_ts = inject_ligo_comb(
+    # 3. Inject the comb using the new function
+    # The 'extras' return value contains the raw FFTs, which we don't need for this plot.
+    freqs, psd_comb, psd_combined, comb_ts, combined_ts, _ = Comb(
         strain_data=strain_noise,
         sample_rate=sample_rate,
         f0=f0,
@@ -137,7 +164,7 @@ def inject_ligo_comb(
     time_axis = np.arange(num_samples) / sample_rate
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
-    fig.suptitle("LIGO Comb Injection Example", fontsize=16)
+    fig.suptitle("LIGO Comb Injection Example (Frequency Domain)", fontsize=16)
 
     # Plot a small segment of the time series to see the injection
     ax1.set_title("Time Series (first 0.25 seconds)")
@@ -153,6 +180,11 @@ def inject_ligo_comb(
     ax2.set_title("Power Spectral Density (Welch Method)")
     ax2.loglog(freqs, psd_combined, label="Combined (Noise + Comb) PSD")
     ax2.loglog(freqs, psd_comb, label="Comb Signal PSD", alpha=0.8, linestyle="--")
+    
+    # For comparison, let's also plot the original noise PSD
+    _, psd_noise = welch(strain_noise, fs=sample_rate, nperseg=int(sample_rate))
+    ax2.loglog(freqs, psd_noise, label="Original Noise PSD", color='gray', linestyle=':', alpha=0.7)
+    
     ax2.set_xlabel("Frequency (Hz)")
     ax2.set_ylabel("PSD (strain$^2$/Hz)")
     ax2.legend()
