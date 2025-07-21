@@ -35,8 +35,9 @@ class Comb3:
 
         base[indices] =  np.random.normal(loc=f_values*self.asc, scale=1, size=np.shape(f_values))
 
+        self.i_FD_comb = base
         self.i_FD_data = base + self.w_FD_data
-        self.epsilon = base!=0
+        self.ni = base!=0
 
         self.i_TD_data = np.fft.irfft(self.i_FD_data)
         self.i_TD_data_comb = np.fft.irfft(base)
@@ -57,6 +58,17 @@ class Comb3:
         
         print(f'min {f0}, max {np.max(np.real(self.w_FD_freqs))}')
         # print(f'high {((np.max(np.real(self.w_FD_freqs))-f0)/nf)}')
-        
-        print(f'Generating stochastic comb res {res}, nf {nf}, f0 {f0}, df {df}')
+        # print(f'Generating stochastic comb res {res}, nf {nf}, f0 {f0}, df {df}')
         self._inject_comb(wf,ts, f0,df,nf)
+
+    def _sample(self, wf,ts) -> dict:
+        self.inject_comb_stoch(wf=wf,ts=ts)
+        sample = {}
+
+        x0 = self.w_FD_data
+        ni = self.ni
+        epsilon = self.i_FD_comb
+        xi = self.i_FD_data
+
+        sample.update({'x0': x0, 'epsilon': epsilon, 'ni': ni, 'xi': xi})
+        return sample
