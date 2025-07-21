@@ -43,7 +43,7 @@ class Comb3:
     
     def inject_comb_known(self,wf,ts, f0,df,nf):
         self.load_FD(wf,ts)
-        self._inject_comb(self,wf,ts, f0,df,nf)
+        self._inject_comb(wf,ts, f0,df,nf)
         
 
     def inject_comb_stoch(self,wf,ts):
