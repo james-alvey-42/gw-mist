@@ -2,6 +2,8 @@ import numpy as np
 from scipy.signal import welch
 
 
+#### CODE COMMENTS WRITTEN BY GEMINI-2.6-PRO ####
+
 def Comb(
     strain_data: np.ndarray,
     sample_rate: float,
