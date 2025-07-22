@@ -1,7 +1,7 @@
 ### CMDLINE STUFF ###
 
 import argparse
-parser = argparse.ArgumentParser(description='Example script')
+parser = argparse.ArgumentParser(description='Script to train NN on GW Data')
 parser.add_argument('--epochs', type=int, default=20, help='Number of training epochs')
 parser.add_argument('--name', type=str, help='Path to save model')
 parser.add_argument('--correlated', action='store_true', help='Whether the model is trained on correlated distortions')
@@ -60,7 +60,7 @@ else:
         nn.cuda().eval
 
 corr_marker = 'correlated' if args.correlated else 'uncorrelated'
-title_marker = f'[BLANK]' if args.name==None else args.name
+title_marker = f'BLANK' if args.name==None else args.name
 
 
 print(f'Running a '+corr_marker+f' simulation of {args.epochs} epochs.')
