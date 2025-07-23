@@ -277,10 +277,7 @@ class Sim_FD_Additive:
     
     def _resample(self, sample: dict) -> dict:
         Nsims = sample['x0'].shape[0] if sample['x0'].ndim == 2 else 1
-        if self.bkg:
-            sample['x0'] = self.get_x_H0(Nsims, sample['mu'])
-        else:  
-            sample['x0'] = self.get_x_H0(Nsims, 0)
+        sample['x0'] = self.get_x_H0(Nsims, sample['mu'])
         sample['ni'] = self.get_ni(sample['x0'])
         sample['epsilon'] = self.get_epsilon(sample['ni'], sample['x0'])
         sample['xi'] = self.get_x_Hi(sample['epsilon'], sample['ni'], sample['x0'])

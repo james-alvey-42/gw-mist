@@ -9,6 +9,7 @@ import sys
 sys.path.append('../../mist-base/GW')
 sys.path.append('../../mist-base/')
 sys.path.append('../../mist-base/utils')
+sys.path.append('../../')
 
 import gw150814_simulator as gs
 from gw150814_simulator import GW150814, defaults, GW150814_Additive
@@ -55,11 +56,11 @@ else:
     def to_device(nn):
         nn.cuda().eval
 
-corr_marker = 'correlated' if args.correlated else 'uncorrelated'
+# corr_marker = 'correlated' if args.correlated else 'uncorrelated'
 title_marker = f'BLANK' if args.name==None else args.name
 
 
-print(f'Running a '+corr_marker+f' simulation of {args.epochs} epochs.')
+print(f'Running a '+f' simulation of {args.epochs} epochs.')
 print(f'you are running at {prec[1]}-bit precision on {dev}. Title:'+title_marker)
 
 
@@ -68,7 +69,7 @@ from models.unet_1d import UNet1d
 from models.resnet_1d import ResidualNet
 
 from src.utils.comb import Comb3, Sim_FD_Additive
-bins = 1000
+bins = 10000
 simulator = Sim_FD_Additive(bins, 1,None, bounds=5, white=True)
 
 
