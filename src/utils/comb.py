@@ -210,23 +210,23 @@ class Sim_FD_Additive:
         self.Nbins = Nbins
         self.sigma = sigma
         self.sigbounds = bounds
-        self.bkg = bkg
         self.fraction = fraction
         self.sample_fraction = sample_fraction
         self.grid = torch.linspace(1, 1024, Nbins, device=device, dtype=dtype)
         self.white = white
-        self.base_PSD = np.load(PSD_file)['PSD']
+        if not white:
+            self.base_PSD = np.load(PSD_file)['PSD']
     
     def get_mu(self) -> torch.Tensor:
         grid = self.grid.unsqueeze(0)
         if self.white:
-            return torch.ones([np.shape(grid)])
+            return torch.ones(grid.shape)
         else:
             return self.base_PSD
     
     def get_x_H0(self, Nsims: int, mu: torch.Tensor = 0) -> torch.Tensor:
         x_shape = (Nsims, self.Nbins)
-        return torch.from_numpy(np.random.lognormal(mean=mu,sigma=torch.sqrt(mu),shape=x_shape)).to(self.dtype)
+        return torch.from_numpy(np.random.lognormal(mean=mu,sigma=torch.sqrt(mu),size=x_shape)).to(self.dtype)
     
     def get_ni(self, x: torch.Tensor) -> torch.Tensor:
         if self.fraction is None:
@@ -253,14 +253,19 @@ class Sim_FD_Additive:
 
     def get_epsilon(self, ni: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         up, down = self.get_bounds(x)
-        return torch.FloatTensor(x.shape).uniform_(down, up)*ni
+        # print(f'The Shape of the bounds follows {up.shape}, {down.shape}')
+        ### THIS IS SUB OPTIMAL ###
+        x_shape = np.shape(x.numpy)
+        eps_np = np.random.uniform(low=down, high=up)
+        return torch.from_numpy(eps_np)
+        # return torch.FloatTensor(x.shape).uniform_(down, up)*ni
     
     def get_x_Hi(self, epsilon: torch.Tensor, ni: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         return x + epsilon * ni
     
     def _sample(self, Nsims: int) -> dict:
         sample = {}
-        mu = self.get_mu(theta)
+        mu = self.get_mu()
         sample['mu'] = mu
         x0 = self.get_x_H0(Nsims, mu)
         ni = self.get_ni(x0)
