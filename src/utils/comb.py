@@ -230,21 +230,21 @@ class Sim_FD_Additive:
         return torch.from_numpy(np.random.lognormal(mean=mu,sigma=torch.sqrt(mu),size=x_shape)).to(self.dtype)
     
     def get_ni(self, x: torch.Tensor) -> torch.Tensor:
-        if self.fraction is None:
-            """Standard basis vectors"""
-            batch_size, N_bins = x.shape
-            ni = torch.zeros(batch_size, N_bins, device=self.device, dtype=self.dtype)
-            indices = torch.randint(0, N_bins, (batch_size,), device=self.device)
-            ni[torch.arange(batch_size), indices] = 1
-        else:
-            """Fraction of bins are distorted"""
-            if self.sample_fraction:
-                fr = np.random.uniform(0.01, self.fraction)
-            else:   
-                fr = self.fraction
-            prob = fr*self.Nbins/100
-            random_vals = torch.rand_like(x)
-            ni = (random_vals < prob).type(self.dtype)  # fr% chance
+        # if self.fraction is None:
+        """Standard basis vectors"""
+        batch_size, N_bins = x.shape
+        ni = torch.zeros(batch_size, N_bins, device=self.device, dtype=self.dtype)
+        indices = torch.randint(0, N_bins, (batch_size,), device=self.device)
+        ni[torch.arange(batch_size), indices] = 1
+        # else:
+        #     """Fraction of bins are distorted"""
+        #     if self.sample_fraction:
+        #         fr = np.random.uniform(0.01, self.fraction)
+        #     else:   
+        #         fr = self.fraction
+        #     prob = fr*self.Nbins/100
+        #     random_vals = torch.rand_like(x)
+        #     ni = (random_vals < prob).type(self.dtype)  # fr% chance
         return ni
     
     def get_bounds(self,x:torch.Tensor) ->torch.Tensor:
