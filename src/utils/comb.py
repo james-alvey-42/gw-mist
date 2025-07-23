@@ -194,7 +194,7 @@ class Comb3_Torch:
 
 class Sim_FD_Additive:
     def __init__(self, Nbins, sigma, bounds=5, fraction=None, sample_fraction=False, 
-                 white = True, bkg=False, device='cpu', dtype=torch.float64, PSD_file='gw_FD_PSD.npz'):
+                 white = True, device='cpu', dtype=torch.float64, PSD_file='gw_FD_PSD.npz'):
         """
         Args:
         - Nbins (int): Number of bins in the histogram.
@@ -209,24 +209,13 @@ class Sim_FD_Additive:
         self.dtype = dtype
         self.Nbins = Nbins
         self.sigma = sigma
-        self.bounds = bounds
+        self.sigbounds = bounds
         self.bkg = bkg
         self.fraction = fraction
         self.sample_fraction = sample_fraction
         self.grid = torch.linspace(1, 1024, Nbins, device=device, dtype=dtype)
         self.white = white
         self.base_PSD = np.load(PSD_file)['PSD']
-
-    # def get_theta(self, Nsims: int) -> torch.Tensor:
-    #     return torch.rand(Nsims, 3, device=self.device, dtype=self.dtype) * 2 - 1
-
-    def get_mu(self) -> torch.Tensor:
-        grid = self.grid.unsqueeze(0)  # Shape: (1, Nbins)
-        if self.white:
-            return np.random.lognormal(0,1,shape=grid)
-        else:
-            jitter = np.random.lognormal(mean=self.base_PSD,sigma=np.sqrt(self.base_PSD),shape=np.shape(grid))
-            return self.base_PSD*jitter
     
     def get_mu(self) -> torch.Tensor:
         grid = self.grid.unsqueeze(0)
@@ -237,15 +226,7 @@ class Sim_FD_Additive:
     
     def get_x_H0(self, Nsims: int, mu: torch.Tensor = 0) -> torch.Tensor:
         x_shape = (Nsims, self.Nbins)
-        if self.white:
-            np.random.lognormal(0,1,shape=x_shape)
-        else:
-            
-
-    
-    def get_x_H0(self, Nsims: int, mu: torch.Tensor = 0) -> torch.Tensor:
-        x_shape = (Nsims, self.Nbins)
-        return (mu + torch.randn(x_shape, device=self.device, dtype=self.dtype) * self.sigma).to(self.dtype)
+        return torch.from_numpy(np.random.lognormal(mean=mu,sigma=torch.sqrt(mu),shape=x_shape)).to(self.dtype)
     
     def get_ni(self, x: torch.Tensor) -> torch.Tensor:
         if self.fraction is None:
@@ -265,22 +246,23 @@ class Sim_FD_Additive:
             ni = (random_vals < prob).type(self.dtype)  # fr% chance
         return ni
     
+    def get_bounds(self,x:torch.Tensor) ->torch.Tensor:
+        up = torch.exp(x+self.sigbounds*torch.sqrt(x))
+        down = torch.exp(x-self.sigbounds*torch.sqrt(x))
+        return up, down 
+
     def get_epsilon(self, ni: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        return (2 * self.bounds * torch.rand(x.shape, device=self.device, dtype=self.dtype) - self.bounds) * ni
+        up, down = self.get_bounds(x)
+        return torch.FloatTensor(x.shape).uniform_(down, up)*ni
     
     def get_x_Hi(self, epsilon: torch.Tensor, ni: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         return x + epsilon * ni
     
     def _sample(self, Nsims: int) -> dict:
         sample = {}
-        if self.bkg:
-            # theta = self.get_theta(Nsims)
-            mu = self.get_mu(theta)
-            sample['theta'] = theta
-            sample['mu'] = mu
-            x0 = self.get_x_H0(Nsims, mu)
-        else:
-            x0 = self.get_x_H0(Nsims, 0)
+        mu = self.get_mu(theta)
+        sample['mu'] = mu
+        x0 = self.get_x_H0(Nsims, mu)
         ni = self.get_ni(x0)
         epsilon = self.get_epsilon(ni, x0)
         xi = self.get_x_Hi(epsilon, ni, x0)
