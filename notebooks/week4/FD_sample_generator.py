@@ -23,11 +23,11 @@ default['f_max']=250
 gw = gs.GW150814(settings=default)
 l = len(gw.time_to_frequency_domain(gw.generate_time_domain_waveform()))
 s = args.nsamples
-fdw = np.zeros([s,l])
-fdn = np.zeros([s,l])
+waveform = np.zeros([s,l])
+noise = np.zeros([s,l])
 
 for i in tqdm(range(s)):
-    fdw[i] = gw.time_to_frequency_domain(gw.generate_time_domain_waveform())
-    fdn[i] = gw.time_to_frequency_domain(gw.generate_time_domain_noise())
+    waveform[i] = gw.time_to_frequency_domain(gw.generate_time_domain_waveform())
+    noise[i] = gw.time_to_frequency_domain(gw.generate_time_domain_noise())
 
-np.savez('FD_samples.npz', fdw='waveform',fdn='noise')
+np.savez('FD_samples.npz', waveform=waveform,noise=noise)
