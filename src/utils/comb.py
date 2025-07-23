@@ -193,8 +193,8 @@ class Comb3_Torch:
     
 
 class Sim_FD_Additive:
-    def __init__(self, Nbins, sigma, bounds=5, fraction=None, sample_fraction=False, 
-                 white = True, device='cpu', dtype=torch.float64, PSD_file='gw_FD_PSD.npz'):
+    def __init__(self, Nbins, sigma, PSD_arr:torch.Tensor, bounds=5, fraction=None, sample_fraction=False, 
+                 white = True, device='cpu', dtype=torch.float64):
         """
         Args:
         - Nbins (int): Number of bins in the histogram.
@@ -215,7 +215,8 @@ class Sim_FD_Additive:
         self.grid = torch.linspace(1, 1024, Nbins, device=device, dtype=dtype)
         self.white = white
         if not white:
-            self.base_PSD = np.load(PSD_file)['PSD']
+            self.base_PSD = PSD_arr
+
     
     def get_mu(self) -> torch.Tensor:
         grid = self.grid.unsqueeze(0)
