@@ -216,6 +216,9 @@ class Sim_FD_Additive:
         self.white = white
         if not white:
             self.base_PSD = PSD_arr
+            if self.Nbins != len(PSD_arr):
+                print(f'PSD distortion mode selected - setting Nbins to {len(PSD_arr)}')
+            self.Nbins = len(PSD_arr)
 
     
     def get_mu(self) -> torch.Tensor:
@@ -227,7 +230,10 @@ class Sim_FD_Additive:
     
     def get_x_H0(self, Nsims: int, mu: torch.Tensor = 0) -> torch.Tensor:
         x_shape = (Nsims, self.Nbins)
-        return torch.from_numpy(np.random.lognormal(mean=mu,sigma=torch.sqrt(mu),size=x_shape)).to(self.dtype)
+        print(f'x_shape is {x_shape}')
+        # return torch.from_numpy(np.random.lognormal(mean=mu,sigma=torch.sqrt(mu),size=x_shape)).to(self.dtype)
+        jitter = torch.from_numpy(np.random.lognormal(mean=0, sigma=1, size=x_shape)).to(self.dtype)
+        return mu*jitter
     
     def get_ni(self, x: torch.Tensor) -> torch.Tensor:
         # if self.fraction is None:
@@ -248,8 +254,10 @@ class Sim_FD_Additive:
         return ni
     
     def get_bounds(self,x:torch.Tensor) ->torch.Tensor:
-        up = torch.exp(x+self.sigbounds*torch.sqrt(x))
-        down = torch.exp(x-self.sigbounds*torch.sqrt(x))
+        # up = torch.exp(x+self.sigbounds*torch.sqrt(x))
+        # down = torch.exp(x-self.sigbounds*torch.sqrt(x))
+        up = x*(10**5)
+        down = x/(10**5)
         return up, down 
 
     def get_epsilon(self, ni: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
