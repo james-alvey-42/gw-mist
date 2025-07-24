@@ -18,22 +18,29 @@ class Simulator_Additive:
         - device (str): Device to run the tensors on.
         - dtype (torch.dtype): Data type of the tensors.
         """
+        self.mode = mode
+        if self.mode == 'gw':
+            default = gs.defaults
+            default['posterior_samples_path'] = '../../mist-base/GW/GW150814_posterior_samples.npz'
+            default['f_max']=250
+            self.gw = gs.GW150814(settings=default)
+            self.Nbins = len(self.gw.time_to_frequency_domain(self.gw.generate_time_domain_waveform()))
+        else: 
+            self.Nbins = Nbins
+        
         self.device = device
         self.dtype = dtype
-        self.Nbins = Nbins
         self.sigma = sigma
         self.bounds = bounds
         self.bkg = bkg
         self.fraction = fraction
         self.sample_fraction = sample_fraction
-        self.grid = torch.linspace(-10, 10, Nbins, device=device, dtype=dtype)
-        self.mode = mode
+        self.grid = torch.linspace(20, 1024, self.Nbins, device=device, dtype=dtype)
 
-        if self.mode == 'gw':
-            default = gs.defaults
-            default['posterior_samples_path'] = '../../mist-base/GW/GW150814_posterior_samples.npz'
-            default['f_max']=250
-            gw = gs.GW150814(settings=default)
+        # print(f'self.Nbins {self.Nbins}')
+        # print(f'shape of self.grid {self.grid.shape}')
+
+
             
         
     def get_theta(self, Nsims: int) -> torch.Tensor:
@@ -47,20 +54,34 @@ class Simulator_Additive:
             theta[:, 1:2] * grid/10 +
             0.5*theta[:, 2:3]
         )
-        return mu  # Shape: (Nsims, Nbins)
+        # return mu  # Shape: (Nsims, Nbins)
+        # print(f'the shape of mu is {grid.shape}')
+        return torch.zeros_like(grid)
     
     def get_x_H0(self, Nsims: int, mu: torch.Tensor = 0) -> torch.Tensor:
         x_shape = (Nsims, self.Nbins)
         if self.mode == 'white':
             noise = (torch.randn(x_shape, device=self.device, dtype=self.dtype) * self.sigma).to(self.dtype)
             return mu + noise
-        if self.mode == 'complex':
+        elif self.mode == 'complex':
             noise = torch.complex(torch.rand(x_shape), torch.rand(x_shape)).to(self.dtype)
             norm_noise = torch.abs(noise)
             return mu+norm_noise
-        if self.mode == 'gw':
-            wf = gw.generate_time_domain_waveform()/torch.sqrt(gw.psd)
-            return mu+wf
+        elif self.mode == 'gw':
+            gwsim = self.gw
+            wf_td = gwsim.generate_time_domain_waveform()
+            noise_td = gwsim.generate_time_domain_noise()
+
+            N = len(wf_td)
+            fs = 1/gwsim.delta_t
+
+            wf_PSD = (2.0 / (fs * N)) * np.abs(gwsim.time_to_frequency_domain(wf_td))**2
+            noise_PSD = (2.0 / (fs * N)) * np.abs(gwsim.time_to_frequency_domain(noise_td))**2
+
+            whitened_bkg = torch.from_numpy(np.expand_dims((wf_PSD/noise_PSD),0))
+            return mu+whitened_bkg
+        else:
+            raise Exception('pick a valid mode- white, gw or complex') 
 
     def get_ni(self, x: torch.Tensor) -> torch.Tensor:
         if self.fraction is None:
@@ -75,7 +96,11 @@ class Simulator_Additive:
                 fr = np.random.uniform(0.01, self.fraction)
             else:   
                 fr = self.fraction
-            prob = fr*self.Nbins/100
+            # print(f'{self.fraction},{self.sample_fraction}')
+            # print(f'simulating with a fraction {fr}')
+            # prob = fr*self.Nbins/100
+            prob = fr
+            # print(f'prob {prob}')
             random_vals = torch.rand_like(x)
             ni = (random_vals < prob).type(self.dtype)  # fr% chance
         return ni
