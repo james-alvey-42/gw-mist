@@ -256,8 +256,8 @@ class Sim_FD_Additive:
     def get_bounds(self,x:torch.Tensor) ->torch.Tensor:
         # up = torch.exp(x+self.sigbounds*torch.sqrt(x))
         # down = torch.exp(x-self.sigbounds*torch.sqrt(x))
-        up = x*(10**5)
-        down = x/(10**5)
+        up = x*(10**self.sigbounds)
+        down = x/(10**self.sigbounds)
         return up, down 
 
     def get_epsilon(self, ni: torch.Tensor, x: torch.Tensor) -> torch.Tensor:

@@ -3,6 +3,7 @@ parser = argparse.ArgumentParser(description='Script to train NN on GW Data')
 parser.add_argument('--epochs', type=int, default=20, help='Number of training epochs')
 parser.add_argument('--name', type=str, help='Path to save model')
 parser.add_argument('--mac', action='store_true', help='Is this being run on my mac?')
+parser.add_argument('--psd', action='store_true', help='Is this being run on my mac?')
 args = parser.parse_args()
 
 import sys
@@ -40,7 +41,6 @@ from utils.data import OnTheFlyDataModule, StoredDataModule
 from utils.module import CustomLossModule_withBounds, BCELossModule
 
 mycolors = ['#77aca2', '#ff004f', '#f98e08']
-bs = 16
 
 #### SORTING ARGS OUT ####
 if args.mac:
@@ -58,9 +58,10 @@ else:
 
 # corr_marker = 'correlated' if args.correlated else 'uncorrelated'
 title_marker = f'BLANK' if args.name==None else args.name
+psd_marker = f'PSD' if args.psd==True else f'white'
 
 
-print(f'Running a '+f' simulation of {args.epochs} epochs.')
+print(f'Running a '+psd_marker+f' simulation of {args.epochs} epochs.')
 print(f'you are running at {prec[1]}-bit precision on {dev}. Title:'+title_marker)
 
 
@@ -69,8 +70,15 @@ from models.unet_1d import UNet1d
 from models.resnet_1d import ResidualNet
 
 from src.utils.comb import Comb3, Sim_FD_Additive
-bins = 10000
-simulator = Sim_FD_Additive(bins, 1,None, bounds=5, white=True)
+
+if not args.psd:
+    load_psd = None
+    bins = 10000
+else:
+    load_psd = torch.from_numpy(np.load('base_PSD.npz')['psd'][1])
+    bins = len(load_psd)
+
+simulator = Sim_FD_Additive(bins, 1,load_psd, bounds=5, white=True)
 
 
 class Network_epsilon(torch.nn.Module):
@@ -136,5 +144,5 @@ trainer = pl.Trainer(
 )
 trainer.fit(model, dm)
 network_epsilon.cuda().eval()
-torch.save(model, 'out/'+title_marker+'_c_model')
-torch.save(network_epsilon, 'out/'+title_marker+'_c_network')
+torch.save(model, 'out/'+title_marker+'_'+psd_marker+'_c_model')
+torch.save(network_epsilon, 'out/'+title_marker+'_'+psd_marker+'_c_network')
