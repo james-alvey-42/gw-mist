@@ -1,5 +1,8 @@
 import numpy as np
 import torch
+import sys
+sys.path.append('../../mist-base/GW')
+import gw150814_simulator as gs
     
 class Simulator_Additive:
     def __init__(self, Nbins, sigma, bounds=5, fraction=None, 
@@ -25,6 +28,13 @@ class Simulator_Additive:
         self.sample_fraction = sample_fraction
         self.grid = torch.linspace(-10, 10, Nbins, device=device, dtype=dtype)
         self.mode = mode
+
+        if self.mode == 'gw':
+            default = gs.defaults
+            default['posterior_samples_path'] = '../../mist-base/GW/GW150814_posterior_samples.npz'
+            default['f_max']=250
+            gw = gs.GW150814(settings=default)
+            
         
     def get_theta(self, Nsims: int) -> torch.Tensor:
         return torch.rand(Nsims, 3, device=self.device, dtype=self.dtype) * 2 - 1
@@ -42,9 +52,16 @@ class Simulator_Additive:
     def get_x_H0(self, Nsims: int, mu: torch.Tensor = 0) -> torch.Tensor:
         x_shape = (Nsims, self.Nbins)
         if self.mode == 'white':
-            noise = torch.randn(x_shape, device=self.device, dtype=self.dtype) * self.sigma).to(self.dtype)
+            noise = (torch.randn(x_shape, device=self.device, dtype=self.dtype) * self.sigma).to(self.dtype)
+            return mu + noise
         if self.mode == 'complex':
-            
+            noise = torch.complex(torch.rand(x_shape), torch.rand(x_shape)).to(self.dtype)
+            norm_noise = torch.abs(noise)
+            return mu+norm_noise
+        if self.mode == 'gw':
+            wf = gw.generate_time_domain_waveform()/torch.sqrt(gw.psd)
+            return mu+wf
+
     def get_ni(self, x: torch.Tensor) -> torch.Tensor:
         if self.fraction is None:
             """Standard basis vectors"""

@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-    
+
     
 class Simulator_Additive:
     def __init__(self, Nbins, sigma, bounds=5, fraction=None, sample_fraction=False, bkg=False, device='cpu', dtype=torch.float64):
