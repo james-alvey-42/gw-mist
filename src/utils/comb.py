@@ -230,7 +230,7 @@ class Sim_FD_Additive:
     
     def get_x_H0(self, Nsims: int, mu: torch.Tensor = 0) -> torch.Tensor:
         x_shape = (Nsims, self.Nbins)
-        print(f'x_shape is {x_shape}')
+        # print(f'x_shape is {x_shape}')
         # return torch.from_numpy(np.random.lognormal(mean=mu,sigma=torch.sqrt(mu),size=x_shape)).to(self.dtype)
         jitter = torch.from_numpy(np.random.lognormal(mean=0, sigma=1, size=x_shape)).to(self.dtype)
         return mu*jitter

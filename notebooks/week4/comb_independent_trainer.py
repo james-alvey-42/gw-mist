@@ -130,8 +130,8 @@ def resample(sample):
 batch_size = 128
 Nsims= 6000
 samples = simulator.sample(Nsims=Nsims)  
-dm = StoredDataModule(samples, batch_size=batch_size, on_after_load_sample=resample)
-# dm = OnTheFlyDataModule(simulator, Nsims_per_epoch=400*batch_size, batch_size=batch_size)
+# dm = StoredDataModule(samples, batch_size=batch_size, on_after_load_sample=resample)
+dm = OnTheFlyDataModule(simulator, Nsims_per_epoch=400*batch_size, batch_size=batch_size, num_workers=31)
 network_epsilon = Network_epsilon()
 model = CustomLossModule_withBounds(network_epsilon, learning_rate=3e-3)
 # logger = pl.loggers.WandbLogger(save_dir="./logs", project="gof", name="nam-test1")
@@ -144,5 +144,5 @@ trainer = pl.Trainer(
 )
 trainer.fit(model, dm)
 network_epsilon.cuda().eval()
-torch.save(model, 'out/'+title_marker+'_'+psd_marker+'_c_model')
-torch.save(network_epsilon, 'out/'+title_marker+'_'+psd_marker+'_c_network')
+torch.save(model, 'out/'+title_marker+'_'+psd_marker+'_uc_model')
+torch.save(network_epsilon, 'out/'+title_marker+'_'+psd_marker+'_uc_network')
