@@ -22,12 +22,13 @@ class Simulator_Additive:
         if self.mode == 'gw':
             default = gs.defaults
             default['posterior_samples_path'] = '../../mist-base/GW/GW150814_posterior_samples.npz'
-            default['f_max']=250
             self.gw = gs.GW150814(settings=default)
-            self.Nbins = len(self.gw.time_to_frequency_domain(self.gw.generate_time_domain_waveform()))
+            self.Nbins = len(self.gw.time_to_frequency_domain(self.gw.generate_time_domain_waveform())[100:1024])
         else: 
             self.Nbins = Nbins
         
+        print(f'the number of bins is {self.Nbins}')
+
         self.device = device
         self.dtype = dtype
         self.sigma = sigma
@@ -35,7 +36,7 @@ class Simulator_Additive:
         self.bkg = bkg
         self.fraction = fraction
         self.sample_fraction = sample_fraction
-        self.grid = torch.linspace(20, 1024, self.Nbins, device=device, dtype=dtype)
+        self.grid = torch.linspace(100, 1024, self.Nbins, device=device, dtype=dtype)
 
         # print(f'self.Nbins {self.Nbins}')
         # print(f'shape of self.grid {self.grid.shape}')
@@ -79,7 +80,9 @@ class Simulator_Additive:
             noise_PSD = (2.0 / (fs * N)) * np.abs(gwsim.time_to_frequency_domain(noise_td))**2
 
             whitened_bkg = torch.from_numpy(np.expand_dims((wf_PSD/noise_PSD),0))
-            return mu+whitened_bkg
+            h0 = mu+whitened_bkg[:,100:1024]
+            # self.Nbins = h0.shape[1]
+            return h0 ### APPLY CUT HERE TO MAKE SURE FILTER ISN"T INCLUDED
         else:
             raise Exception('pick a valid mode- white, gw or complex') 
 
