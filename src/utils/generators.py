@@ -65,8 +65,8 @@ class Simulator_Additive:
             noise = (torch.randn(x_shape, device=self.device, dtype=self.dtype) * self.sigma).to(self.dtype)
             return mu + noise
         elif self.mode == 'complex':
-            noise = torch.complex(torch.rand(x_shape), torch.rand(x_shape)).to(self.dtype)
-            norm_noise = torch.abs(noise)
+            noise = torch.complex(torch.randn(x_shape), torch.randn(x_shape))
+            norm_noise = torch.abs(noise).to(self.dtype)
             return mu+norm_noise
         elif self.mode == 'gw':
             gwsim = self.gw
