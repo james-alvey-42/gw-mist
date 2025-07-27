@@ -26,13 +26,12 @@ class Simulator_Additive:
             self.Nbins = len(self.gw.time_to_frequency_domain(self.gw.generate_time_domain_waveform())[100:1024])
         else: 
             self.Nbins = Nbins
-        
-        print(f'the number of bins is {self.Nbins}')
+        # print(f'the number of bins is {self.Nbins}')
 
         self.device = device
         self.dtype = dtype
         self.sigma = sigma
-        self.bounds = bounds
+        self.bounds = np.abs(bounds)
         self.bkg = bkg
         self.fraction = fraction
         self.sample_fraction = sample_fraction
@@ -108,8 +107,14 @@ class Simulator_Additive:
             ni = (random_vals < prob).type(self.dtype)  # fr% chance
         return ni
     
+    # def get_epsilon(self, ni: torch.Tensor, x: torch.Tensor) -> torch.Tensor: OLD - MODIFIED BELOW
+    #     return (2 * self.bounds * torch.rand(x.shape, device=self.device, dtype=self.dtype) - self.bounds) * ni
+    
     def get_epsilon(self, ni: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        return (2 * self.bounds * torch.rand(x.shape, device=self.device, dtype=self.dtype) - self.bounds) * ni
+        if self.mode in ('complex', 'gw'):
+            return self.bounds * torch.rand(x.shape, device=self.device, dtype=self.dtype) * ni # returns on [0, self.bounds)
+        else:
+            return (2 * self.bounds * torch.rand(x.shape, device=self.device, dtype=self.dtype) - self.bounds) * ni # returns on [-self.bounds, self.bounds)
     
     def get_x_Hi(self, epsilon: torch.Tensor, ni: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         return x + epsilon * ni
