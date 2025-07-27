@@ -7,7 +7,7 @@ import gw150814_simulator as gs
 class Simulator_Additive:
     def __init__(self, Nbins, sigma, bounds=5, fraction=None, 
                  sample_fraction=False, bkg=False, device='cpu', 
-                 dtype=torch.float64, mode=None):
+                 dtype=torch.float64, mode=None, logspace=False):
         """
         Args:
         - Nbins (int): Number of bins in the histogram.
@@ -36,6 +36,7 @@ class Simulator_Additive:
         self.fraction = fraction
         self.sample_fraction = sample_fraction
         self.grid = torch.linspace(100, 1024, self.Nbins, device=device, dtype=dtype)
+        self.logspace=logspace
 
         # print(f'self.Nbins {self.Nbins}')
         # print(f'shape of self.grid {self.grid.shape}')
@@ -66,7 +67,11 @@ class Simulator_Additive:
         elif self.mode == 'complex':
             noise = torch.complex(torch.randn(x_shape), torch.randn(x_shape))
             norm_noise = torch.abs(noise).to(self.dtype)
-            return mu+norm_noise
+            if not self.logspace:
+                return mu+norm_noise
+            else:
+                return torch.log(mu+norm_noise)
+
         elif self.mode == 'gw':
             gwsim = self.gw
             wf_td = gwsim.generate_time_domain_waveform()
@@ -112,7 +117,10 @@ class Simulator_Additive:
     
     def get_epsilon(self, ni: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         if self.mode in ('complex', 'gw'):
-            return self.bounds * torch.rand(x.shape, device=self.device, dtype=self.dtype) * ni # returns on [0, self.bounds)
+            if not self.logspace:
+                return self.bounds * torch.rand(x.shape, device=self.device, dtype=self.dtype) * ni # returns on [0, self.bounds)
+            else:
+                return (2 * self.bounds * torch.rand(x.shape, device=self.device, dtype=self.dtype) - self.bounds) * ni # returns on [-self.bounds, self.bounds)
         else:
             return (2 * self.bounds * torch.rand(x.shape, device=self.device, dtype=self.dtype) - self.bounds) * ni # returns on [-self.bounds, self.bounds)
     
