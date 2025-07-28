@@ -128,14 +128,19 @@ class Simulator_Additive:
             theta = self.get_theta(Nsims)
             mu = self.get_mu(theta)
             sample['theta'] = theta
-            sample['mu'] = mu
+            #### TEMPORARY FIX WHILE WE'RE NOT MODELLING WITH MU ###
+             # sample['mu'] = mu
+            x_shape = (Nsims, self.Nbins)
+            sample['mu'] = torch.zeros(x_shape)
+            ##########################################################
             x0 = self.get_x_H0(Nsims, mu)
         else:
             x0 = self.get_x_H0(Nsims, 0)
         ni = self.get_ni(x0)
         epsilon = self.get_epsilon(ni, x0)
         xi = self.get_x_Hi(epsilon, ni, x0)
-        sample.update({'x0': x0, 'epsilon': epsilon, 'ni': ni, 'xi': xi})
+        
+        sample.update({'x0': x0,'epsilon': epsilon, 'ni': ni, 'xi': xi})
         return sample
     
     def _resample(self, sample: dict) -> dict:

@@ -63,6 +63,10 @@ class StoredDataset(BaseDataset):
         return len(self._data[list(self._data.keys())[0]])
 
     def __getitem__(self, idx):
+        #### TEST STEP ####
+        # print('priting items')
+        # print(self._data.items())
+        #####################
         sample = {k: v[idx] for k, v in self._data.items()}
         return self._process_sample(sample)
     
