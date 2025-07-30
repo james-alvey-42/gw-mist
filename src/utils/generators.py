@@ -50,16 +50,20 @@ class Simulator_Additive:
     def get_theta(self, Nsims: int) -> torch.Tensor:
         ##### NB YOU WILL NEED TO CHANGE THIS FOR THE GW METHOD - ONLY WORKS FOR GRID ON 0-100 HERE ####
         if self.bump != 'stoch':
-            return torch.tensor([0,3,20])*torch.ones(Nsims, 3)
+            return torch.tensor([self.Nbins/2,3,20])*torch.ones(Nsims, 3)
         else:
             norm = torch.tensor([self.Nbins/5,4,self.Nbins/5])
             start = torch.tensor([self.Nbins/2, 1,self.Nbins/6])
             return torch.rand(Nsims, 3, device=self.device, dtype=self.dtype) * norm + start
 
     def get_mu(self, theta: torch.Tensor) -> torch.Tensor:
+        Nsims = theta.shape[0]
         base = torch.zeros(self.Nbins).unsqueeze(0)
-        mu = self._gauss(base, theta[0], theta[1], theta[2])
-        return mu**torch.ones(1, self.Nbins)
+        grid = torch.arange(self.Nbins).unsqueeze(0)*torch.ones([Nsims,self.Nbins])
+        mu = self._gauss(grid, theta[:,0].unsqueeze(-1), theta[:,1].unsqueeze(-1), theta[:,2].unsqueeze(-1))
+        print(theta.shape)
+        print(mu.shape)
+        return mu
     
     def get_x_H0(self, Nsims: int, mu: torch.Tensor = 0) -> torch.Tensor:
         x_shape = (Nsims, self.Nbins)
@@ -131,7 +135,7 @@ class Simulator_Additive:
             theta = self.get_theta(Nsims)
             mu = self.get_mu(theta)
             sample['theta'] = theta
-            sample['mu'] = mu*
+            sample['mu'] = mu
             x0 = self.get_x_H0(Nsims, mu)
         else:
             mu = torch.zeros(x_shape)
