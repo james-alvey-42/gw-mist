@@ -91,11 +91,11 @@ def create_plot(size = (4,3)):
     ax1 = fig.add_axes((0,0,1,1))
     return fig,ax1
 
-def do_ticks(list_of_axes):
+def do_ticks(list_of_axes, dir = 'in'):
     for ax in list_of_axes:
         ax.minorticks_on()
-        ax.tick_params(top=True,right=True, direction='in', length=7, which='major')
-        ax.tick_params(top=True,right=True, direction='in', length=4, which='minor')
+        ax.tick_params(top=True,right=True, direction=dir, length=7, which='major')
+        ax.tick_params(top=True,right=True, direction=dir, length=4, which='minor')
 
 
 ### FIXING TOOLS FOR GWPY SETTINGS ###
@@ -105,9 +105,9 @@ def fix_frame(ax):
     ax.spines[:].set_linewidth(1)
     return True
 
-def fix_plot(a):
+def fix_plot(a, tickdir ='in'):
     for axes in a:
         axes.grid(False)
-        do_ticks([axes])
+        do_ticks([axes], tickdir)
         fix_frame(axes)
     return True
