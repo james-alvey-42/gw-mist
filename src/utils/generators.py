@@ -139,12 +139,12 @@ class Simulator_Additive:
             sample['mu'] = mu
             x0 = self.get_x_H0(Nsims, mu)
         else:
-            mu = torch.zeros(x_shape)
-            sample['mu'] = mu
-            x0 = self.get_x_H0(Nsims, 0)
-        ni = self.get_ni(x0)
-        epsilon = self.get_epsilon(ni, x0)
-        xi = self.get_x_Hi(epsilon, ni, x0)
+            mu = torch.zeros(x_shape).to(dtype=self.dtype)
+            sample['mu'] = mu.to(dtype=self.dtype)
+            x0 = self.get_x_H0(Nsims, 0).to(dtype=self.dtype)
+        ni = self.get_ni(x0).to(dtype=self.dtype)
+        epsilon = self.get_epsilon(ni, x0).to(dtype=self.dtype)
+        xi = self.get_x_Hi(epsilon, ni, x0).to(dtype=self.dtype)
         
         sample.update({'x0': x0,'epsilon': epsilon, 'ni': ni, 'xi': xi})
         return sample
