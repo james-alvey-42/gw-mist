@@ -7,16 +7,19 @@ import gw150814_simulator as gs
 class Simulator_Additive:
     def __init__(self, Nbins, sigma, bounds=5, fraction=None, 
                  sample_fraction=False, bkg=False, device='cpu', 
-                 dtype=torch.float64, mode=None, c_props = None):
+                 dtype=torch.float64, mode=None, bump = None, pve_bounds =True ):
         """
         Args:
         - Nbins (int): Number of bins in the histogram.
         - sigma (float): Standard deviation of the Gaussian noise.
         - bounds (float): Bounds for the uniform distribution of the additive noise.
         - fraction (float): Fraction of bins to be perturbed by the additive noise. If None, just one bin is perturbed.
-        - bkg (bool): If True, the simulator generates background events.
+        - bkg (bool): If True, the simulator generates a bkground signal.
         - device (str): Device to run the tensors on.
         - dtype (torch.dtype): Data type of the tensors.
+        - mode (str): white, complex or gw - simulation generation mode
+        - bump (str): None, det or stoch - whether to generate a bump as mu
+        - pve_bounds (bool): If True, 
         """
         self.mode = mode
         if self.mode == 'gw':
@@ -36,28 +39,27 @@ class Simulator_Additive:
         self.fraction = fraction
         self.sample_fraction = sample_fraction
         self.grid = torch.linspace(100, 1024, self.Nbins, device=device, dtype=dtype)
-        self.c_props = c_props
+        self.bump = bump
 
         # print(f'self.Nbins {self.Nbins}')
         # print(f'shape of self.grid {self.grid.shape}')
 
-
+    def _gauss(self, x: torch.Tensor, m, amp, sigma) -> torch.Tensor:
+        return amp * np.exp(-0.5 * ((x - m) / sigma) ** 2)
             
-        
     def get_theta(self, Nsims: int) -> torch.Tensor:
-        return torch.rand(Nsims, 3, device=self.device, dtype=self.dtype) * 2 - 1
+        ##### NB YOU WILL NEED TO CHANGE THIS FOR THE GW METHOD - ONLY WORKS FOR GRID ON 0-100 HERE ####
+        if self.bump != 'stoch':
+            return torch.tensor([0,3,20])*torch.ones(Nsims, 3)
+        else:
+            norm = torch.tensor([self.Nbins/5,4,self.Nbins/5])
+            start = torch.tensor([self.Nbins/2, 1,self.Nbins/6])
+            return torch.rand(Nsims, 3, device=self.device, dtype=self.dtype) * norm + start
 
     def get_mu(self, theta: torch.Tensor) -> torch.Tensor:
-        grid = self.grid.unsqueeze(0)  # Shape: (1, Nbins)
-        # Compute mu for all simulations at once
-        mu = (
-            torch.sin(grid + 0.5*theta[:, 0:1]) +
-            theta[:, 1:2] * grid/10 +
-            0.5*theta[:, 2:3]
-        )
-        # return mu  # Shape: (Nsims, Nbins)
-        # print(f'the shape of mu is {grid.shape}')
-        return torch.zeros_like(grid)
+        base = torch.zeros(self.Nbins).unsqueeze(0)
+        mu = self._gauss(base, theta[0], theta[1], theta[2])
+        return mu**torch.ones(1, self.Nbins)
     
     def get_x_H0(self, Nsims: int, mu: torch.Tensor = 0) -> torch.Tensor:
         x_shape = (Nsims, self.Nbins)
@@ -124,17 +126,16 @@ class Simulator_Additive:
     
     def _sample(self, Nsims: int) -> dict:
         sample = {}
+        x_shape = (Nsims, self.Nbins)
         if self.bkg:
             theta = self.get_theta(Nsims)
             mu = self.get_mu(theta)
             sample['theta'] = theta
-            #### TEMPORARY FIX WHILE WE'RE NOT MODELLING WITH MU ###
-             # sample['mu'] = mu
-            x_shape = (Nsims, self.Nbins)
-            sample['mu'] = torch.zeros(x_shape)
-            ##########################################################
+            sample['mu'] = mu*
             x0 = self.get_x_H0(Nsims, mu)
         else:
+            mu = torch.zeros(x_shape)
+            sample['mu'] = mu
             x0 = self.get_x_H0(Nsims, 0)
         ni = self.get_ni(x0)
         epsilon = self.get_epsilon(ni, x0)
