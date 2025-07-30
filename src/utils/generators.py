@@ -40,6 +40,7 @@ class Simulator_Additive:
         self.sample_fraction = sample_fraction
         self.grid = torch.linspace(100, 1024, self.Nbins, device=device, dtype=dtype)
         self.bump = bump
+        self.pve_bounds = pve_bounds
 
         # print(f'self.Nbins {self.Nbins}')
         # print(f'shape of self.grid {self.grid.shape}')
@@ -61,8 +62,8 @@ class Simulator_Additive:
         base = torch.zeros(self.Nbins).unsqueeze(0)
         grid = torch.arange(self.Nbins).unsqueeze(0)*torch.ones([Nsims,self.Nbins])
         mu = self._gauss(grid, theta[:,0].unsqueeze(-1), theta[:,1].unsqueeze(-1), theta[:,2].unsqueeze(-1))
-        print(theta.shape)
-        print(mu.shape)
+        # print(theta.shape)
+        # print(mu.shape)
         return mu
     
     def get_x_H0(self, Nsims: int, mu: torch.Tensor = 0) -> torch.Tensor:
@@ -120,7 +121,7 @@ class Simulator_Additive:
     #     return (2 * self.bounds * torch.rand(x.shape, device=self.device, dtype=self.dtype) - self.bounds) * ni
     
     def get_epsilon(self, ni: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        if self.mode in ('complex', 'gw'):
+        if self.pve_bounds:
             return self.bounds * torch.rand(x.shape, device=self.device, dtype=self.dtype) * ni # returns on [0, self.bounds)
         else:
             return (2 * self.bounds * torch.rand(x.shape, device=self.device, dtype=self.dtype) - self.bounds) * ni # returns on [-self.bounds, self.bounds)
