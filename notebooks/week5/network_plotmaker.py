@@ -7,6 +7,10 @@ import scipy
 from scipy.stats import norm
 import plotfancy as pf
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+import matplotlib.ticker as ticker
+from cycler import cycler
 import argparse
 pf.housestyle_rcparams()
 
@@ -20,10 +24,17 @@ from src.utils.generators import Simulator_Additive
 from simulators.utils import *
 from utils.module import CustomLossModule_withBounds, BCELossModule
 
+pf.housestyle_rcparams()
+
 mycolors = ['#570f6d', "#9e8f92", '#f98e08']
 folly = '#ff004f'
+mygold = (218/255, 165/255, 64/255, 0.1)  
 
 ############ FUNCTIONs #########
+
+def cax(ax, pad=0.05):
+    divider = make_axes_locatable(ax)
+    return divider.append_axes(position='top', size='5%', pad=pad)
 
 def t_to_pvalue(ts, df=1):
     return 1 - scipy.stats.chi2.cdf(ts, df)
@@ -732,7 +743,10 @@ ax1.set_title("P-value Distribution\n"+r"(Sum Statistic under $H_0$)")
 ############### THIS COULD BE A MISTAKE REPEAT PLOT ######################
 ### - PLOT MINIMUM P-VALUES FROM SUM TEST - ###
 Nmc = pv_bin_H0.shape[0]
+min_pv_bin_H0_BCE = np.min(pv_bin_H0.reshape(Nmc, -1), axis=1)
 min_pv_sum_H0_epsilon = np.min(pv_sum_H0.reshape(Nmc, -1), axis=1)
+min_pv_bin_H0_epsilon = np.min(pv_bin_H0.reshape(Nmc, -1), axis=1)
+
 
 ax2 = fig.add_axes((1.3,0,1,1))
 ax2.hist(min_pv_sum_H0_epsilon, bins=50, alpha=0.7, color=folly)
@@ -858,6 +872,63 @@ plt.savefig(f'figs/{netid}/BCE_distributions.png', dpi=700, bbox_inches = 'tight
 ########################################################################################
 ###################    FINAL COMPARISONS    ###################
 ########################################################################################
+
+def analyse_obs_epsilon(obs):
+    
+    target = obs['xi']
+    
+    # Evaluate epsilon and SNR^2 test statistic from NN
+    epsilon_nn = network_epsilon.epsilon(target.to(device='mps', dtype=torch.float32)).detach().cpu().numpy().squeeze(0)       #[len(correlation_scales), Nbins]
+    # epsilon_nn = network_epsilon.epsilon(target.cuda()).detach().cpu().numpy().squeeze(0)       #[len(correlation_scales), Nbins]
+
+    variance_nn = network_epsilon.logvariance.exp().detach().cpu().numpy()                            #[len(correlation_scales), Nbins]
+    # variance_nn = network_epsilon.logvariance.exp().detach().cpu().numpy()                            #[len(correlation_scales), Nbins]
+
+    snr2_nn = network_epsilon.snr(target.to(device='mps', dtype=torch.float32)).detach().cpu().numpy().squeeze(0)**2            #[len(correlation_scales), Nbins]
+    # snr2_nn = network_epsilon.snr(target.cuda()).detach().cpu().numpy().squeeze(0)**2            #[len(correlation_scales), Nbins]
+
+    ts_sum_nn = snr2_nn.sum()-ts_sum_H0_epsilon_mean
+    p_sum_nn = t_to_pvalue_empirical(ts_sum_nn, ts_sum_H0_epsilon)   
+
+    
+    # Compute analytical epsilon and SNR^2 test statistic
+    ni_temp = torch.eye(Nbins, dtype=torch.float32)
+    fit = best_fit(obs['xi'][0], simulator)
+    delta_x = (obs['xi'] - fit).to(dtype=torch.float32)
+    epsilon_analytical = get_epsilon(delta_x, ni_temp).squeeze(0)
+    snr2_analytical = get_snr(delta_x, ni_temp).squeeze(0)**2
+    ts_sum_analytical = snr2_analytical.sum() #((obs['xi'])**2/glob_sigma**2).sum()
+    p_sum_analytical = t_to_pvalue(ts_sum_analytical, DOF)
+
+    # Compute localized p-values
+    _p_nn, _p_analytical = [], []
+    for idx, ts_bin in enumerate(snr2_nn):
+        ts_bin_i = ts_bin_H0_epsilon[:, idx]
+        m = ts_bin_i.mean()
+        ts0_ref = ts_bin_i - m
+        ts_obs = (ts_bin-m)
+        _p_nn.append(t_to_pvalue_empirical(ts_obs, ts0_ref))  
+        _p_analytical.append(t_to_pvalue(snr2_analytical[idx], 1)) # 1 Nbins per bin
+    p_nn = np.array(_p_nn) 
+    p_analytical = np.array(_p_analytical)
+
+
+    # Compute global p-values
+    obs_min_pv_bin = p_nn.reshape(-1).min()
+    obs_min_pv_sum = p_sum_nn
+    pv_all_obs = np.concatenate([
+        p_nn.reshape(-1),  # Shape: [Nbins]
+        torch.tensor([p_sum_nn])  # Shape: [1]
+    ], axis=0)  # Combined shape: [num_total_tests]
+    obs_min_pv_all = pv_all_obs.min()
+
+    p_glob_bin = np.mean(min_pv_bin_H0_epsilon <= obs_min_pv_bin)
+    p_glob_all = np.mean(min_pv_all_H0_epsilon <= obs_min_pv_all)
+
+    p_glob_bin, p_glob_all
+
+    return epsilon_nn, epsilon_analytical, variance_nn, snr2_nn, snr2_analytical, p_nn, p_analytical, p_sum_nn, p_sum_analytical, p_glob_all
+
 
 def analyse_obs_BCE(obs):
     
@@ -1174,7 +1245,6 @@ for i in range(3):
     plt.savefig(f'figs/{netid}/complex_comparison_n{i}.png', dpi=700, bbox_inches = 'tight')
 
 ################# PART TWO ###########################
-
 
 ###### SET UP GRID ######
 positions = torch.arange(0, Nbins, 1).to(dtype=simulator.dtype)
