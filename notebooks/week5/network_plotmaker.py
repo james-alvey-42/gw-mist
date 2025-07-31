@@ -7,6 +7,7 @@ import scipy
 from scipy.stats import norm
 import plotfancy as pf
 import matplotlib.pyplot as plt
+import argparse
 pf.housestyle_rcparams()
 
 import os, sys
@@ -23,6 +24,13 @@ mycolors = ['#570f6d', "#9e8f92", '#f98e08']
 folly = '#ff004f'
 
 ############ FUNCTIONs #########
+
+def t_to_pvalue(ts, df=1):
+    return 1 - scipy.stats.chi2.cdf(ts, df)
+
+def t_to_pvalue_empirical(ts_obs, ts0_ref):
+    ts0_ref = np.asarray(ts0_ref)
+    return (np.sum(ts0_ref >= ts_obs) + 1) / (len(ts0_ref) + 1)
 
 def dict_to_mps(x):
     if isinstance(x, dict):
@@ -126,6 +134,134 @@ netid = p_marker+b_marker+s_marker+str(train_bounds)
 
 if not os.path.isdir('figs/'+netid):
     os.makedirs('figs/'+netid)
+
+######### NEURAL NETOWORK CODE #########
+
+### -- make network -- ###
+
+
+from models.online_norm import OnlineStandardizingLayer
+from models.resnet_1d import ResidualNet
+from models.unet_1d import UNet1d 
+
+# - snr - #
+
+class Network_epsilon(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        
+        self.logvariance = torch.nn.Parameter(torch.ones(Nbins)*5)
+        self.net = ResidualNet(1, 1, hidden_features=128, num_blocks=2, kernel_size=1, padding=0) 
+
+    def forward(self, x):
+        data = x['x']
+        x = self.net(data.unsqueeze(1)).squeeze(1)
+        return x
+                
+    def epsilon(self, x):
+        x = self.net(x.unsqueeze(1)).squeeze(1) # x-net
+        return x
+    
+    def snr(self, x):
+        return self.epsilon(x) / self.logvariance.exp().sqrt()  # [B, N_bins]
+    
+    def bounds(self):
+        return self.logvariance.detach().exp().sqrt().mean(-1) * 5
+        
+    def forward(self, x):
+        
+        # Adaptive data generation
+        ni = x['ni']
+        
+        ###########################################
+        if not glob_pve_bounds:
+            epsilon_sim =  (2 * self.bounds() * torch.rand(x['x'].shape, 
+                                                           device= x['x'].device, 
+                                                           dtype= x['x'].dtype) - self.bounds()) * ni
+        else:
+            epsilon_sim =  (self.bounds() * torch.rand(x['x'].shape,
+                                                        device= x['x'].device, 
+                                                        dtype= x['x'].dtype)) * ni
+        ###########################################
+        
+        data =  x['x0'] + epsilon_sim * ni
+        
+        # data = x['x']
+        epsilon = self.epsilon(data)
+        mask = ( x['ni'] != 0 )  
+        squared_error = (epsilon - epsilon_sim)**2                                                  # [B, N_bins]
+        l = squared_error / (self.logvariance.exp() + 1e-10) + self.logvariance                     # [B, N_bins]
+        return (l * mask.float()).sum() * 0.5
+    
+# - bce - #
+
+class Network_BCE(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        
+        self.net = UNet1d(1, 1, sizes=(8, 16, 32, 64, 128))
+        # self.net = ResidualNet(1, 1, hidden_features=128, num_blocks=2, kernel_size=1, padding=0) 
+        self.online_norm = OnlineStandardizingLayer((Nbins,), use_average_std=False) 
+
+    def forward(self, x):
+        data = x['x']
+        x = self.net(data.unsqueeze(1)).squeeze(1)
+        return x
+
+##### LOAD FROM PATH #####
+
+## - snr - ##
+
+network_epsilon = Network_epsilon()
+checkpoint = torch.load(f'networks/network_e_{netid}_complex', 
+                        weights_only=False,map_location=torch.device('cpu'))
+sd = checkpoint.state_dict()
+new_state_dict = {}
+for key in sd:
+    new_key = key.replace('model.', '')  # Remove 'model.' prefix
+    new_state_dict[new_key] = sd[key]
+    
+network_epsilon.load_state_dict(new_state_dict)
+# network_epsilon.cuda().double().eval()
+network_epsilon.to(dtype=torch.float32,device='mps').eval()
+
+model = CustomLossModule_withBounds(network_epsilon, learning_rate=3e-3)
+checkpoint = torch.load(f'networks/model_e_{netid}_complex', 
+                        weights_only=False,map_location=torch.device('cpu'))
+sd = checkpoint.state_dict()
+for key in sd:
+    new_key = key.replace('model.', '')  # Remove 'model.' prefix
+    new_state_dict[new_key] = sd[key]
+    
+model.load_state_dict(sd)
+# network_epsilon.cuda().double().eval()
+model.to(dtype=torch.float32,device='mps').eval()
+
+## -- bce -- ##
+
+network_BCE = Network_BCE()
+checkpoint = torch.load(f'networks/network_BCE_{netid}_complex', weights_only=False,map_location=torch.device('cpu'))
+sd = checkpoint.state_dict()
+new_state_dict = {}
+for key in sd:
+    new_key = key.replace('model.', '')  # Remove 'model.' prefix
+    new_state_dict[new_key] = sd[key]
+    
+network_BCE.load_state_dict(new_state_dict)
+# network_BCE.cuda().double().eval()
+network_BCE.to(dtype=torch.float32,device='mps').eval()
+
+model_BCE = BCELossModule(network_BCE, learning_rate=3e-3)
+checkpoint = torch.load(f'networks/model_BCE_{netid}_complex', weights_only=False,map_location=torch.device('cpu'))
+sd = checkpoint.state_dict()
+# new_state_dict = {}
+for key in sd:
+    new_key = key.replace('model.', '')  # Remove 'model.' prefix
+    new_state_dict[new_key] = sd[key]
+    
+model_BCE.load_state_dict(sd)
+# network_BCE.cuda().double().eval()
+model_BCE.to(dtype=torch.float32,device='mps').eval()
 
 ######## MC ON DATA #########
 
@@ -282,135 +418,9 @@ pf.fix_plot([ax1,ax2, ax3])
 plt.tight_layout()
 plt.savefig(f'figs/data_visu_{s_marker}{b_marker}.png', dpi=700, bbox_inches = 'tight')
 
-######### NEURAL NETOWORK TRAINING #########
-
-### -- make network -- ###
-
-
-from models.online_norm import OnlineStandardizingLayer
-from models.resnet_1d import ResidualNet
-from models.unet_1d import UNet1d 
-
-# - snr - #
-
-class Network_epsilon(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        
-        self.logvariance = torch.nn.Parameter(torch.ones(Nbins)*5)
-        self.net = ResidualNet(1, 1, hidden_features=128, num_blocks=2, kernel_size=1, padding=0) 
-
-    def forward(self, x):
-        data = x['x']
-        x = self.net(data.unsqueeze(1)).squeeze(1)
-        return x
-                
-    def epsilon(self, x):
-        x = self.net(x.unsqueeze(1)).squeeze(1) # x-net
-        return x
-    
-    def snr(self, x):
-        return self.epsilon(x) / self.logvariance.exp().sqrt()  # [B, N_bins]
-    
-    def bounds(self):
-        return self.logvariance.detach().exp().sqrt().mean(-1) * 5
-        
-    def forward(self, x):
-        
-        # Adaptive data generation
-        ni = x['ni']
-        
-        ###########################################
-        if not glob_pve_bounds:
-            epsilon_sim =  (2 * self.bounds() * torch.rand(x['x'].shape, 
-                                                           device= x['x'].device, 
-                                                           dtype= x['x'].dtype) - self.bounds()) * ni
-        else:
-            epsilon_sim =  (self.bounds() * torch.rand(x['x'].shape,
-                                                        device= x['x'].device, 
-                                                        dtype= x['x'].dtype)) * ni
-        ###########################################
-        
-        data =  x['x0'] + epsilon_sim * ni
-        
-        # data = x['x']
-        epsilon = self.epsilon(data)
-        mask = ( x['ni'] != 0 )  
-        squared_error = (epsilon - epsilon_sim)**2                                                  # [B, N_bins]
-        l = squared_error / (self.logvariance.exp() + 1e-10) + self.logvariance                     # [B, N_bins]
-        return (l * mask.float()).sum() * 0.5
-    
-# - bce - #
-
-class Network_BCE(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        
-        self.net = UNet1d(1, 1, sizes=(8, 16, 32, 64, 128))
-        # self.net = ResidualNet(1, 1, hidden_features=128, num_blocks=2, kernel_size=1, padding=0) 
-        self.online_norm = OnlineStandardizingLayer((Nbins,), use_average_std=False) 
-
-    def forward(self, x):
-        data = x['x']
-        x = self.net(data.unsqueeze(1)).squeeze(1)
-        return x
-
-##### LOAD FROM PATH #####
-
-## - snr - ##
-
-network_epsilon = Network_epsilon()
-checkpoint = torch.load(f'networks/network_e_{netid}_complex', 
-                        weights_only=False,map_location=torch.device('cpu'))
-sd = checkpoint.state_dict()
-new_state_dict = {}
-for key in sd:
-    new_key = key.replace('model.', '')  # Remove 'model.' prefix
-    new_state_dict[new_key] = sd[key]
-    
-network_epsilon.load_state_dict(new_state_dict)
-# network_epsilon.cuda().double().eval()
-network_epsilon.to(dtype=torch.float32,device='mps').eval()
-
-model = CustomLossModule_withBounds(network_epsilon, learning_rate=3e-3)
-checkpoint = torch.load(f'networks/model_e_{netid}_complex', 
-                        weights_only=False,map_location=torch.device('cpu'))
-sd = checkpoint.state_dict()
-for key in sd:
-    new_key = key.replace('model.', '')  # Remove 'model.' prefix
-    new_state_dict[new_key] = sd[key]
-    
-model.load_state_dict(sd)
-# network_epsilon.cuda().double().eval()
-model.to(dtype=torch.float32,device='mps').eval()
-
-## -- bce -- ##
-
-network_BCE = Network_BCE()
-checkpoint = torch.load(f'networks/network_BCE_{netid}_complex', weights_only=False,map_location=torch.device('cpu'))
-sd = checkpoint.state_dict()
-new_state_dict = {}
-for key in sd:
-    new_key = key.replace('model.', '')  # Remove 'model.' prefix
-    new_state_dict[new_key] = sd[key]
-    
-network_BCE.load_state_dict(new_state_dict)
-# network_BCE.cuda().double().eval()
-network_BCE.to(dtype=torch.float32,device='mps').eval()
-
-model_BCE = BCELossModule(network_BCE, learning_rate=3e-3)
-checkpoint = torch.load(f'networks/model_BCE_{netid}_complex', weights_only=False,map_location=torch.device('cpu'))
-sd = checkpoint.state_dict()
-# new_state_dict = {}
-for key in sd:
-    new_key = key.replace('model.', '')  # Remove 'model.' prefix
-    new_state_dict[new_key] = sd[key]
-    
-model_BCE.load_state_dict(sd)
-# network_BCE.cuda().double().eval()
-model_BCE.to(dtype=torch.float32,device='mps').eval()
-
 #### MCMC WITH STATS ####
+
+###### SNR #######  
 
 ### - SNR - ###
 
@@ -430,7 +440,7 @@ for _ in range(N_batch):
     ts_bin_H0_epsilon.append(ts_batch)
     
 ts_bin_H0_epsilon = np.concatenate(ts_bin_H0_epsilon)
-ts_bin_H0_epsilon.shape
+
 
 ### - BCE - ### 
 
@@ -453,6 +463,42 @@ for _ in range(N_batch):
 data_bin_H0 = np.concatenate(data_bin_H0)
 eps_bin_H0 = np.concatenate(eps_bin_H0)
 res_bin_H0 = np.concatenate(res_bin_H0)
+
+##### PVALUES ######
+
+# snr #
+
+ni = torch.eye(Nbins, dtype=obs['xi'].dtype)
+variance = 1 / get_sigma_epsilon_inv2(ni)
+
+batch_size = 2048*2
+N_batch = int(N_mc / batch_size)
+data_bin_H0 = []
+eps_bin_H0 = []
+network_pvalue = []
+for _ in range(N_batch):
+    mc_samples = simulator.sample(batch_size)
+    data_bin_H0.append(mc_samples['x0'])
+    eps_bin_H0.append(mc_samples['epsilon'])
+    network_pvalue.append(network_epsilon.snr(mc_samples['xi'].to(device='mps', dtype=torch.float32)).detach().cpu().numpy()**2)
+    
+data_bin_H0 = np.concatenate(data_bin_H0)
+eps_bin_H0 = np.concatenate(eps_bin_H0)
+network_pvalue = np.concatenate(network_pvalue)
+
+N_mc, num_bins = ts_bin_H0_epsilon.shape
+ts_bin_flat = ts_bin_H0_epsilon.reshape(N_mc, num_bins)
+means = ts_bin_flat.mean(axis=0)  # Shape: [num_bins]
+ts_centered = ts_bin_flat - means  # Shape: [N_mc, num_bins]
+
+# Sort the centered data along N_mc axis
+sorted_ts = np.sort(ts_centered, axis=0)  # Shape: [N_mc, num_bins]
+# Compute ranks for all values
+ranks = np.argsort(np.argsort(-ts_centered, axis=0), axis=0)  # Ranks in descending order
+# Compute p-values
+p_values = (ranks + 1) / N_mc
+# Reshape back to [N_mc, num_bins]
+pv_bin_H0 = p_values.reshape(N_mc, num_bins)  
 
 ##### PARITY PLOTS #### SNR NETWORK PARITY
 
@@ -510,12 +556,20 @@ plt.savefig(f'figs/{netid}/parity.png', dpi=700, bbox_inches = 'tight')
 ##### PARITY PLOTS ##### SNR MASS PARITY
 
 fig,ax1 = pf.create_plot(size=(3.5,3))
+ax2 = fig.add_axes((1.2,0,1,1))
+
 ax1.scatter(eps_bin_H0[:10000], network_pvalue[:10000],s=.5, alpha=0.1, color=folly)
+ax2.scatter(eps_bin_H0[:10000], network_pvalue[:10000],s=.5, alpha=0.1, color=folly)
+
+x = np.linspace(0,8,100)
+ax1.plot(x, x**2,lw=5, color='black')
+
 ax1.set_xlabel(r'$\epsilon$ Analytical')
+ax2.set_xlabel(r'$\epsilon$ Analytical')
 ax1.set_ylabel(r'$\mathrm{SNR}_i^2$')
 ax1.set_xlim([0,8])
 ax1.set_ylim([0,40])
-pf.fix_plot([ax1])
+pf.fix_plot([ax1,ax2])
 plt.tight_layout()
 plt.savefig(f'figs/{netid}/preditction_distribution.png', dpi=700, bbox_inches = 'tight')
 
@@ -554,7 +608,7 @@ for i in range(4):
     axs[i].hist(ts_bin_i, bins=bins, density=True, color='#ff004f', alpha=0.5)    
     axs[i].set_xlabel(f'$t_i$, bin {int(bin)}')
     axs[i].set_xlim(-1, 7)
-    axs[i].plot(grid, chi2, c='k', label='$\chi^2$ with df=1')
+    axs[i].plot(grid, chi2, c='k', label=r'$\chi^2$ with df=1')
 axs[0].set_ylabel('Freq Density')
 
 pf.fix_plot(axs)
@@ -630,23 +684,6 @@ plt.savefig(f'figs/{netid}/BCE_hist.png', dpi=700, bbox_inches = 'tight')
 
 ############ P VALUES STUFF ##################
 
-###### SNR #######
-
-N_mc, num_bins = ts_bin_H0_epsilon.shape
-ts_bin_flat = ts_bin_H0_epsilon.reshape(N_mc, num_bins)
-means = ts_bin_flat.mean(axis=0)  # Shape: [num_bins]
-ts_centered = ts_bin_flat - means  # Shape: [N_mc, num_bins]
-
-# Sort the centered data along N_mc axis
-sorted_ts = np.sort(ts_centered, axis=0)  # Shape: [N_mc, num_bins]
-# Compute ranks for all values
-ranks = np.argsort(np.argsort(-ts_centered, axis=0), axis=0)  # Ranks in descending order
-# Compute p-values
-p_values = (ranks + 1) / N_mc
-# Reshape back to [N_mc, num_bins]
-pv_bin_H0 = p_values.reshape(N_mc, num_bins)    
-
-pv_bin_H0.shape
 
 pf.housestyle_rcparams()
 bins_pairs = [(0, 1), (0, 10), (0, 90)]
@@ -694,6 +731,7 @@ ax1.set_title("P-value Distribution\n"+r"(Sum Statistic under $H_0$)")
 
 ############### THIS COULD BE A MISTAKE REPEAT PLOT ######################
 ### - PLOT MINIMUM P-VALUES FROM SUM TEST - ###
+Nmc = pv_bin_H0.shape[0]
 min_pv_sum_H0_epsilon = np.min(pv_sum_H0.reshape(Nmc, -1), axis=1)
 
 ax2 = fig.add_axes((1.3,0,1,1))
@@ -710,7 +748,7 @@ pv_all_H0 = np.concatenate([
     pv_sum_H0.reshape(Nmc, -1)      # Sum p-values
 ], axis=1)  # Combined shape: [N_mc, N_bins + 1]
 
-print(pv_all_H0.shape)  # Sanity check
+# print(pv_all_H0.shape)  # Sanity check
 
 ### - PLOT MINIMUM P-VALUES ACROSS ALL TESTS - ###
 min_pv_all_H0_epsilon = np.min(pv_all_H0, axis=1)  # Take minimum p-value across all bins + sum
@@ -759,7 +797,6 @@ pf.fix_plot(axs)
     
 plt.tight_layout()
 plt.savefig(f'figs/{netid}/BCE_correlations.png', dpi=700, bbox_inches = 'tight')
-plt.show()
 
 ### - CENTER AND RANK TS_SUM UNDER H0 - ###
 # Center the test statistic (e.g., chi-squared-like) under H0 by subtracting the mean
@@ -801,7 +838,7 @@ pv_all_H0 = np.concatenate([
     pv_sum_H0.reshape(Nmc, -1)      # Sum p-values
 ], axis=1)  # Combined shape: [N_mc, N_bins + 1]
 
-print(pv_all_H0.shape)  # Sanity check
+# print(pv_all_H0.shape)  # Sanity check
 
 ### - PLOT MINIMUM P-VALUES ACROSS ALL TESTS - ###
 min_pv_all_H0_BCE = np.min(pv_all_H0, axis=1)  # Take minimum p-value across all bins + sum
@@ -822,6 +859,124 @@ plt.savefig(f'figs/{netid}/BCE_distributions.png', dpi=700, bbox_inches = 'tight
 ###################    FINAL COMPARISONS    ###################
 ########################################################################################
 
+def analyse_obs_BCE(obs):
+    
+    target = obs['xi']
+    
+    ts_bin_obs = ts_sbi(obs, model=1)
+    ts_bin_analytical = (((obs['xi']- best_fit(obs['xi'][0], simulator))**2)/glob_sigma**2)[0]-1
+    ts_sum_obs = ts_bin_obs.sum()-ts_sum_H0_BCE_mean
+    ts_sum_obs_analytical = (((obs['xi']- best_fit(obs['xi'][0], simulator))**2)/glob_sigma**2).sum()-DOF
+    _p_nn, _p_analytical = [], []
+    for idx, ts_bin in enumerate(ts_bin_obs):
+        ts_bin_i = ts_bin_H0_BCE[:, idx]
+        m = ts_bin_i.mean()
+        ts0_ref = ts_bin_i - m
+        ts_obs = (ts_bin-m)
+        _p_nn.append(t_to_pvalue_empirical(ts_obs, ts0_ref))
+        _p_analytical.append(t_to_pvalue(ts_bin_analytical[idx]+1, 1))
+    p_nn = np.array(_p_nn)
+    p_analytical = np.array(_p_analytical)
+    p_sum_nn = t_to_pvalue_empirical(ts_sum_obs, ts_sum_H0_BCE)   
+    p_sum_analytical = t_to_pvalue(ts_sum_obs_analytical+DOF, DOF)
+
+    # Compute global p-values
+    obs_min_pv_bin = p_nn.reshape(-1).min()
+    obs_min_pv_sum = p_sum_nn
+    pv_all_obs = np.concatenate([
+        p_nn.reshape(-1),  # Shape: [Nbins]
+        torch.tensor([p_sum_nn])  # Shape: [1]
+    ], axis=0)  # Combined shape: [num_total_tests]
+    obs_min_pv_all = pv_all_obs.min()
+
+    p_glob_bin = np.mean(min_pv_bin_H0_BCE <= obs_min_pv_bin)
+    p_glob_all = np.mean(min_pv_all_H0_BCE <= obs_min_pv_all)
+
+    p_glob_bin, p_glob_all
+
+    return ts_bin_obs, ts_bin_analytical, p_nn, p_analytical, p_sum_nn, p_sum_analytical, p_glob_all
+
+
+def plot_analysis_BCE(obs, ts_bin_obs, ts_bin_analytical, p_nn, p_analytical, p_sum_nn, p_sum_analytical, p_glob_all):
+    
+    # Figure
+    fig = plt.figure(figsize=(10, 8), dpi=200)
+    gs = plt.GridSpec(3, 2, figure=fig, height_ratios=[1, 1, 1], width_ratios=[2, 1])
+
+    ### FIRST PART
+    # First row: ax1 spans both columns
+    ax1 = fig.add_subplot(gs[0, 0])
+    xi = obs['xi'][0]
+    ni = obs['ni'][0] 
+    dist = obs['xi'][0] - obs['x0'][0]
+    grid = torch.linspace(0, Nbins, Nbins)
+    ax1.plot(grid, obs['mu'][0], color='k', label=r"$\mu_{\mathrm{sim}}$")
+    ax1.fill_between(grid, obs['mu'][0]-1, obs['mu'][0]+1,  color='#b0b0b0', alpha=0.1)
+    ax1.fill_between(grid, obs['mu'][0]-2, obs['mu'][0]+2,  color='#b0b0b0', alpha=0.2)
+    ax1.fill_between(grid, obs['mu'][0]-3, obs['mu'][0]+3,  color='#b0b0b0', alpha=0.3)
+    ax1.scatter(grid, xi, c='k', marker='x', s=6)
+    ax1.plot(grid, obs['mu'][0]+dist, color=mycolors[1], label=r"$\mu_{\mathrm{dist}}$")
+    ax1.set_ylabel(r"$x_\mathrm{obs}$", labelpad=1.5)
+    ax1.legend(fontsize=13, loc='best', labelspacing=0.1)
+    ax1.set_ylim(-6.5, 6.5)
+    ax1.set_xticks([])
+    ax1.set_title("Data")
+
+    # Second column: ax2 and ax3 in the first column
+    ax2 = fig.add_subplot(gs[1, 0])
+    ax2.semilogy(grid, p_nn, c=mycolors[1], label=r"$\mathrm{SBI}$")
+    ax2.semilogy(grid, p_analytical, c='k', ls='dotted', label=r"analytical")
+    ax2.set_ylabel(r"$\mathrm{p}_\mathrm{obs}$", labelpad=1.5)
+    ax2.legend(loc='best',  fontsize=13)
+    ax2.set_ylim(1/(N_mc*5), 1)
+    ax2.set_xticks([])
+    ax2.set_title("Anomaly detection")
+    ax2.grid(True)
+
+    ax3 = fig.add_subplot(gs[2, 0])
+    ax3.plot(grid, ts_bin_obs-ts_bin_obs.min(), c=mycolors[1], label=r"$\mathrm{SBI}$")
+    ax3.plot(grid, ts_bin_analytical - ts_bin_analytical.min(), c='k', ls='dotted',label=r"analytical")
+    ax3.set_ylabel(r"$t_\mathrm{obs}$")
+    ax3.legend(loc='best',  fontsize=13)
+    ax3.set_ylim(-.1, None)
+    ax3.set_xticks([])
+    ax3.set_title("")
+    ax3.axhline(0, color='#b0b0b0', linestyle='--')
+
+
+    # Second column: ax4 and ax6 in the second column
+
+    # Bars
+    ax4 = fig.add_subplot(gs[1, 1])
+    ax4.set_yscale('log')
+    ax4.set_ylim(1/(N_mc*5), 1)
+    ax4.set_xticks([0, 1])
+    ax4.set_xticklabels(["SBI", "Analytical"])
+    ax4.set_xlim(-0.5, 2 - 0.5)
+    ax4.set_ylabel(r"$\mathrm{p}_\mathrm{sum}$")
+    ax4.fill_between([-0.2, 0.2], 1, p_sum_nn, facecolor=mycolors[1], edgecolor=mycolors[1])
+    ax4.fill_between([0.8, 1.2], 1, p_sum_analytical, alpha=0.2, edgecolor='k', facecolor='k', linestyle = 'dotted')
+    ax4.set_title("Model validation")
+    ax4.grid(True, axis='y')
+
+    
+    # Add on gs[0, 1] text reporting the three global p-values
+    ax_text = fig.add_subplot(gs[0, 1])
+    mantissa, exp = ('%.2e' % p_glob_all).split('e')
+    exp = int(exp)
+    textstr = r'$\mathrm{p}_{\mathrm{glob}}= %s \times 10^{%d}$' % (mantissa, exp)
+    ax_text.text(0.5, 0.5, textstr, transform=ax_text.transAxes, fontsize=15,
+                verticalalignment='center', horizontalalignment='center',
+                bbox=dict(
+                    facecolor=mygold,
+                    edgecolor='none'  # Remove the border if not needed
+                )
+            )
+    ax_text.axis('off')
+    ax_text.set_title("Global p-value")
+    pf.fix_plot([ax1,ax2,ax3,ax4])
+
+    plt.tight_layout();
 
 import matplotlib.gridspec as gridspec
 pf.housestyle_rcparams()
@@ -1017,7 +1172,6 @@ for i in range(3):
 
     plt.tight_layout()
     plt.savefig(f'figs/{netid}/complex_comparison_n{i}.png', dpi=700, bbox_inches = 'tight')
-    plt.show()
 
 ################# PART TWO ###########################
 
