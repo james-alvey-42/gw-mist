@@ -123,18 +123,34 @@ def local_fix_plot(a, tickdir ='in'):
 
 ######## GLOBALS #########
 
-glob_sigma = 1
-glob_bkg = True
-glob_pve_bounds = False
-glob_det = 'det'
+parser = argparse.ArgumentParser(description='Script to make plots post NN training')
+# numbers
+parser.add_argument('--sigma', type=float, default=1, help='White Noise Sigma (unused if complex)')
+parser.add_argument('--nsims', type=int, default=100_000, help='Global Nsims')
+parser.add_argument('--nbins', type=int, default=100, help='Global Nbins to simulate over')
+parser.add_argument('--bounds', type=int, default=5, help='Global bounds to run simulator on')
+# strings
+parser.add_argument('--mode', type=str, default='complex', help='Global Simulator mode')
+parser.add_argument('--det', type=str, default='det', help='Are simulators deterministic or stochastic? det or stoch.')
+#bools
+parser.add_argument('--pvebounds', action='store_true', help='Positive bounds? Uniform by default')
+parser.add_argument('--nobkg', action='store_false', help='Removes Background mu')
 
-Nsims = 100_000
-Nbins = 100
-train_bounds = 5
+args = parser.parse_args()
+
+glob_sigma = args.sigma
+glob_bkg = args.nobkg
+glob_pve_bounds = args.pvebounds
+glob_det = args.det
+glob_mode = args.mode
+
+Nsims = args.nsims
+Nbins = args.nbins
+train_bounds = args.bounds
 
 simulator = Simulator_Additive(Nbins=Nbins, sigma=glob_sigma, bounds=train_bounds, 
                                fraction=0.2, bkg=glob_bkg, dtype=torch.float32, 
-                               mode='complex', pve_bounds=glob_pve_bounds, bump=glob_det)     
+                               mode=glob_mode, pve_bounds=glob_pve_bounds, bump=glob_det)     
 samples = simulator.sample(Nsims=Nsims)
 obs = simulator.sample(1)
 
@@ -142,6 +158,7 @@ p_marker = 'p' if glob_pve_bounds == True else 'n'
 b_marker = 'b' if glob_bkg == True else 'q'
 s_marker = 'd' if glob_det == 'det' else 's'
 netid = p_marker+b_marker+s_marker+str(train_bounds)
+print(f'netid {netid}')
 
 if not os.path.isdir('figs/'+netid):
     os.makedirs('figs/'+netid)
@@ -1229,7 +1246,7 @@ frac = [0.01,0.1,0.05]
 for i in range(3):
     simulator1 = Simulator_Additive(Nbins=Nbins, sigma=glob_sigma, bkg=glob_bkg, 
                                     bounds=bounds[i], fraction=frac[i], dtype=torch.float32, 
-                                    mode='complex', pve_bounds=glob_pve_bounds, bump=glob_det) 
+                                    mode=glob_mode, pve_bounds=glob_pve_bounds, bump=glob_det) 
     obs = simulator1.sample(1) 
         
     ts_bin_obs, ts_bin_analytical, p_nn_BCE, p_analytical_BCE, p_sum_nn_BCE, p_sum_analytical_BCE, p_glob_all_BCE = analyse_obs_BCE(obs)
@@ -1297,3 +1314,59 @@ local_fix_plot(axs, tickdir='out')
 
 plt.tight_layout()
 plt.savefig(f'figs/{netid}/tmaps.png', dpi=700, bbox_inches = 'tight')
+
+################### DO PVALUE PLOTS ###################
+
+def pvalue_grid_eps(dat):
+    eps_t_mean = np.mean(ts_bin_H0_epsilon, axis=0)
+    eps_t_ref = ts_bin_H0_epsilon - eps_t_mean
+    counts = np.sum(eps_t_ref >= dat[:, np.newaxis, :], axis=1)
+    return (counts + 1) / (len(eps_t_ref) + 1)
+
+def pvalue_grid_BCE(dat):
+    BCE_t_mean = np.mean(ts_bin_H0_BCE, axis=0)
+    BCE_t_ref = ts_bin_H0_BCE - BCE_t_mean
+    counts = np.sum(BCE_t_ref >= dat[:, np.newaxis, :], axis=1)
+    return (counts + 1) / (len(BCE_t_ref) + 1)
+
+fig, ax1 = pf.create_plot()
+ax1.set_xlabel(r'$f$')
+ax2 = fig.add_axes((1.05, 0,0.1,1))
+
+ax3 = fig.add_axes((0, 1.1,1,1))
+plt.setp(ax3.get_xticklabels(), visible=False)
+ax4 = fig.add_axes((1.05, 1.1,0.1,1))
+
+axs = [ax1,ax2,ax3,ax4]
+
+dat = [pvalue_grid_BCE(a), pvalue_grid_eps(s)]
+lab =  [r'$\mathrm{log}_{10}($p$_{i, \mathrm{BCE}})$',r'$\mathrm{log}_{10}($p$_{i, \mathrm{SNR}})$']
+
+labcolour = "#000000"
+
+
+for q in range(2):
+    mesh = axs[2*q].pcolormesh(position_grid.T, amplitude_grid.T, np.log10(dat[q]), cmap='magma', vmin=-8)
+    fig.colorbar(mesh,cax=axs[2*q+1], shrink=0.8, label=lab[q])
+    axs[2*q+1].set_ylim([-6.5,0])
+
+    for j in range(2):
+        axs[2*q].plot(chop_middle(positions)[j], chop_middle(obs['mu'][0])[j], color=labcolour, linewidth=3)
+        for i in range(5):
+            alp = .5+(i/8)
+            axs[2*q].plot(chop_middle(positions)[j], chop_middle(obs['mu'][0]+quantiles[-i])[j], color=labcolour, alpha=alp)
+
+    x = 47
+    axs[2*q].text(x,obs['mu'][0][int(x)], r'$\mu$', color=labcolour, size=20)
+    sigs = [r'$+3\sigma$',r'$+2\sigma$',r'$+\sigma$',r'$\bar{x}_0$']
+    x2 = 49
+    ff = torch.Tensor([0,0,0,-1])
+    for i in range(1,5):
+        axs[2*q].text(x2,(obs['mu'][0]+quantiles[-i])[int(x2)], sigs[i-1], color=labcolour, size=12, ha='center')  
+
+    axs[2*q].set_ylabel(r'$\tilde{d}(f)$')
+
+local_fix_plot(axs, tickdir='out')
+
+plt.tight_layout()
+plt.savefig(f'figs/{netid}/pmaps.png', dpi=700, bbox_inches = 'tight')
