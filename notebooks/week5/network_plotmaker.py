@@ -1285,6 +1285,10 @@ ax4 = fig.add_axes((1.05, 1.1,0.1,1))
 
 axs = [ax1,ax2,ax3,ax4]
 
+mu_label = 'Deterministic' if glob_det=='det' else 'Stochastic'
+eps_label = 'Positive' if glob_pve_bounds else 'Symmetric'
+ax3.set_title(f"Data: Training {mu_label} "+r'$\mu$'+f' On {eps_label} '+r'$\epsilon$')
+
 
 for q in range(2):
     mesh = axs[2*q].pcolormesh(position_grid.T, amplitude_grid.T, np.log10(dat[q]-np.min(dat[q])+0.1), cmap='magma_r')
@@ -1336,6 +1340,8 @@ ax2 = fig.add_axes((1.05, 0,0.1,1))
 ax3 = fig.add_axes((0, 1.1,1,1))
 plt.setp(ax3.get_xticklabels(), visible=False)
 ax4 = fig.add_axes((1.05, 1.1,0.1,1))
+
+ax3.set_title(f"Data: Training {mu_label} "+r'$\mu$'+f' On {eps_label} '+r'$\epsilon$')
 
 axs = [ax1,ax2,ax3,ax4]
 
