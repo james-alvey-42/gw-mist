@@ -673,7 +673,7 @@ fig, axs = plt.subplots(1, 4, figsize=(13, 3), dpi=200)
 res = 50
 
 for i in range(4):
-    bin = np.random.random_integers(1,99)
+    bin = np.random.randint(0,100)
     m = np.mean(ts_bin_H0_BCE[:,bin])
     axs[i].hist(ts_bin_H0_BCE[:,bin]-m, density=True, bins=np.linspace(0,10,res), color=mycolors[0], alpha=0.6)
     axs[i].hist(ts_bin_H0_BCE[:,bin]-m, density=True, bins=np.linspace(0,10,res), color='black', histtype='step')
