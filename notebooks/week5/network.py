@@ -51,7 +51,7 @@ class Network_epsilon(torch.nn.Module):
         # Unpack parameters
         amp = mu_params[:, 0].unsqueeze(1)
         mean = mu_params[:, 1].unsqueeze(1)
-        std = torch.exp(mu_params[:, 2]).unsqueeze(1)
+        std = torch.exp(mu_params[:, 2]).unsqueeze(1) # using exp here to keep std +ve
 
         # 2. Reconstruct the predicted mu signal
         bins = self.bins.unsqueeze(0)
