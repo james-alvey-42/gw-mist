@@ -43,20 +43,18 @@ class Network_epsilon(torch.nn.Module):
                                                     dtype= x['x0'].dtype)) * ni
         ###########################################
         
-        # This is the full data signal, with the true mu (x0) and simulated noise
         data =  x['x0'] + epsilon_sim * ni
         
         # 1. Predict mu parameters from the data
         mu_params = self.mu_predictor(data)
         
-        # Unpack parameters: [amplitude, mean, log_std]
+        # Unpack parameters
         amp = mu_params[:, 0].unsqueeze(1)
         mean = mu_params[:, 1].unsqueeze(1)
-        # Use exp to ensure standard deviation is always positive
         std = torch.exp(mu_params[:, 2]).unsqueeze(1)
 
-        # 2. Reconstruct the predicted mu signal (Gaussian)
-        bins = self.bins.unsqueeze(0) # Shape: [1, Nbins]
+        # 2. Reconstruct the predicted mu signal
+        bins = self.bins.unsqueeze(0)
         mu_pred = amp * torch.exp(-0.5 * ((bins - mean) / std)**2)
 
         # 3. Subtract predicted mu to get the residual signal
@@ -65,8 +63,21 @@ class Network_epsilon(torch.nn.Module):
         # 4. Predict the epsilon (noise) from the residual signal
         epsilon_pred = self.epsilon(residual_signal)
         
-        # 5. Calculate loss
-        mask = ( x['ni'] != 0 )  
-        squared_error = (epsilon_pred - epsilon_sim)**2                                             # [B, N_bins]
-        l = squared_error / (self.logvariance.exp() + 1e-10) + self.logvariance                     # [B, N_bins]
-        return (l * mask.float()).sum() * 0.5
+        # 5. Calculate a composite loss
+        
+        # Loss for mu prediction (direct comparison to ground truth)
+        # We only calculate this where ni is present
+        mask = (ni != 0).float()
+        loss_mu = torch.nn.functional.mse_loss(mu_pred * mask, x['x0'] * mask)
+        
+        # Original loss for epsilon prediction
+        squared_error = (epsilon_pred - epsilon_sim)**2
+        l_epsilon = squared_error / (self.logvariance.exp() + 1e-10) + self.logvariance
+        loss_epsilon = (l_epsilon * mask).sum() * 0.5
+        
+        # Combine the losses with a weighting factor `alpha`
+        # You can tune alpha to balance the two tasks. 0.5 is a good start.
+        alpha = 0.5
+        total_loss = alpha * loss_mu + (1 - alpha) * loss_epsilon
+        
+        return total_loss
