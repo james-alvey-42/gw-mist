@@ -6,16 +6,13 @@ class Network_epsilon(torch.nn.Module):
     def __init__(self, Nbins):
         super().__init__()
         
-        # Epsilon network part - standard symmetric variance
-        self.logvariance = torch.nn.Parameter(torch.ones(Nbins)*5)
-        
-        # Asymmetric variance parameters for the mu signal
-        self.logvariance_mu_left = torch.nn.Parameter(torch.ones(Nbins) * 5)
-        self.logvariance_mu_right = torch.nn.Parameter(torch.ones(Nbins) * 5)
+        # A single, asymmetric variance model for the network's likelihood
+        self.logvariance_left = torch.nn.Parameter(torch.ones(Nbins) * 5)
+        self.logvariance_right = torch.nn.Parameter(torch.ones(Nbins) * 5)
 
         self.net = ResidualNet(1, 1, hidden_features=128, num_blocks=2, kernel_size=1, padding=0) 
 
-        # New MLP to predict the 3 parameters of the Gaussian mu signal
+        # MLP to predict the 3 parameters of the Gaussian mu signal
         self.mu_predictor = torch.nn.Sequential(
             torch.nn.Linear(Nbins, 128),
             torch.nn.ReLU(),
@@ -32,10 +29,14 @@ class Network_epsilon(torch.nn.Module):
         return x
     
     def snr(self, x):
-        return self.epsilon(x) / self.logvariance.exp().sqrt()  # [B, N_bins]
-    
+        # Use the average variance for a general SNR calculation
+        avg_variance = (self.logvariance_left.exp() + self.logvariance_right.exp()) / 2
+        return self.epsilon(x) / (avg_variance.sqrt() + 1e-10)
+
     def bounds(self):
-        return self.logvariance.detach().exp().sqrt().mean(-1) * 5
+        # Use the average standard deviation for generating the symmetric simulated noise
+        avg_std = (self.logvariance_left.exp().sqrt() + self.logvariance_right.exp().sqrt()) / 2
+        return avg_std.mean(-1) * 5
         
     def forward(self, x):
         
@@ -48,18 +49,20 @@ class Network_epsilon(torch.nn.Module):
                                                     dtype= x['x0'].dtype)) * ni
         ###########################################
         
+        # This is the full data signal, with the true mu (x0) and simulated noise
         data =  x['x0'] + epsilon_sim * ni
         
         # 1. Predict mu parameters from the data
         mu_params = self.mu_predictor(data)
         
-        # Unpack parameters
+        # Unpack parameters: [amplitude, mean, log_std]
         amp = mu_params[:, 0].unsqueeze(1)
         mean = mu_params[:, 1].unsqueeze(1)
+        # Use exp to ensure standard deviation is always positive
         std = torch.exp(mu_params[:, 2]).unsqueeze(1)
 
-        # 2. Reconstruct the predicted mu signal
-        bins = self.bins.unsqueeze(0)
+        # 2. Reconstruct the predicted mu signal (Gaussian)
+        bins = self.bins.unsqueeze(0) # Shape: [1, Nbins]
         mu_pred = amp * torch.exp(-0.5 * ((bins - mean) / std)**2)
 
         # 3. Subtract predicted mu to get the residual signal
@@ -68,27 +71,19 @@ class Network_epsilon(torch.nn.Module):
         # 4. Predict the epsilon (noise) from the residual signal
         epsilon_pred = self.epsilon(residual_signal)
         
-        # 5. Calculate a composite loss
-        mask = (ni != 0).float()
+        # 5. Calculate loss using the single asymmetric likelihood
+        mask = ( x['ni'] != 0 ).float()
+        error = epsilon_pred - epsilon_sim
         
-        # --- Asymmetric Mu Loss ---
-        error_mu = mu_pred - x['x0']
-        # Where prediction is greater than true, it's a "left" error relative to the true value
-        is_left_mu = (error_mu > 0) 
+        # Determine which side of the distribution the error falls on
+        is_left = (error > 0)
         
-        variances_mu = torch.where(is_left_mu, self.logvariance_mu_left.exp(), self.logvariance_mu_right.exp())
-        logvariances_mu = torch.where(is_left_mu, self.logvariance_mu_left, self.logvariance_mu_right)
+        # Select the appropriate variance and log-variance for each element
+        variances = torch.where(is_left, self.logvariance_left.exp(), self.logvariance_right.exp())
+        logvariances = torch.where(is_left, self.logvariance_left, self.logvariance_right)
         
-        l_mu = error_mu**2 / (variances_mu + 1e-10) + logvariances_mu
-        loss_mu = (l_mu * mask).sum() * 0.5
-
-        # --- Symmetric Epsilon Loss ---
-        squared_error = (epsilon_pred - epsilon_sim)**2
-        l_epsilon = squared_error / (self.logvariance.exp() + 1e-10) + self.logvariance
-        loss_epsilon = (l_epsilon * mask).sum() * 0.5
+        # Calculate the asymmetric likelihood
+        squared_error = error**2
+        l = squared_error / (variances + 1e-10) + logvariances
         
-        # --- Combine Losses ---
-        alpha = 0.5
-        total_loss = alpha * loss_mu + (1 - alpha) * loss_epsilon
-        
-        return total_loss
+        return (l * mask).sum() * 0.5
