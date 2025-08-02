@@ -6,8 +6,13 @@ class Network_epsilon(torch.nn.Module):
     def __init__(self, Nbins):
         super().__init__()
         
-        # Epsilon network part
+        # Epsilon network part - standard symmetric variance
         self.logvariance = torch.nn.Parameter(torch.ones(Nbins)*5)
+        
+        # Asymmetric variance parameters for the mu signal
+        self.logvariance_mu_left = torch.nn.Parameter(torch.ones(Nbins) * 5)
+        self.logvariance_mu_right = torch.nn.Parameter(torch.ones(Nbins) * 5)
+
         self.net = ResidualNet(1, 1, hidden_features=128, num_blocks=2, kernel_size=1, padding=0) 
 
         # New MLP to predict the 3 parameters of the Gaussian mu signal
@@ -51,7 +56,7 @@ class Network_epsilon(torch.nn.Module):
         # Unpack parameters
         amp = mu_params[:, 0].unsqueeze(1)
         mean = mu_params[:, 1].unsqueeze(1)
-        std = torch.exp(mu_params[:, 2]).unsqueeze(1) # using exp here to keep std +ve
+        std = torch.exp(mu_params[:, 2]).unsqueeze(1)
 
         # 2. Reconstruct the predicted mu signal
         bins = self.bins.unsqueeze(0)
@@ -64,19 +69,25 @@ class Network_epsilon(torch.nn.Module):
         epsilon_pred = self.epsilon(residual_signal)
         
         # 5. Calculate a composite loss
-        
-        # Loss for mu prediction (direct comparison to ground truth)
-        # We only calculate this where ni is present
         mask = (ni != 0).float()
-        loss_mu = torch.nn.functional.mse_loss(mu_pred * mask, x['x0'] * mask)
         
-        # Original loss for epsilon prediction
+        # --- Asymmetric Mu Loss ---
+        error_mu = mu_pred - x['x0']
+        # Where prediction is greater than true, it's a "left" error relative to the true value
+        is_left_mu = (error_mu > 0) 
+        
+        variances_mu = torch.where(is_left_mu, self.logvariance_mu_left.exp(), self.logvariance_mu_right.exp())
+        logvariances_mu = torch.where(is_left_mu, self.logvariance_mu_left, self.logvariance_mu_right)
+        
+        l_mu = error_mu**2 / (variances_mu + 1e-10) + logvariances_mu
+        loss_mu = (l_mu * mask).sum() * 0.5
+
+        # --- Symmetric Epsilon Loss ---
         squared_error = (epsilon_pred - epsilon_sim)**2
         l_epsilon = squared_error / (self.logvariance.exp() + 1e-10) + self.logvariance
         loss_epsilon = (l_epsilon * mask).sum() * 0.5
         
-        # Combine the losses with a weighting factor `alpha`
-        # You can tune alpha to balance the two tasks. 0.5 is a good start.
+        # --- Combine Losses ---
         alpha = 0.5
         total_loss = alpha * loss_mu + (1 - alpha) * loss_epsilon
         
