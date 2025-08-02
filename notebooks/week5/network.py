@@ -38,15 +38,26 @@ class Network_epsilon(torch.nn.Module):
         avg_std = (self.logvariance_left.exp().sqrt() + self.logvariance_right.exp().sqrt()) / 2
         return avg_std.mean(-1) * 5
         
+    def bounds_asym(self):
+        """Returns the left and right bounds for asymmetric noise generation."""
+        left_std = self.logvariance_left.exp().sqrt()
+        right_std = self.logvariance_right.exp().sqrt()
+        left_bound = left_std.mean(-1) * 5
+        right_bound = right_std.mean(-1) * 5
+        return left_bound, right_bound
+
     def forward(self, x):
         
         # Adaptive data generation
         ni = x['ni']
         
         ###########################################
-        epsilon_sim =  (self.bounds() * torch.rand_like(x['x0'],
-                                                    device= x['x0'].device, 
-                                                    dtype= x['x0'].dtype)) * ni
+        # Generate noise from an asymmetric uniform distribution
+        left_bound, right_bound = self.bounds_asym()
+        rand_val = torch.rand_like(x['x0'], device=x['x0'].device, dtype=x['x0'].dtype)
+        
+        # Sample from U[-left_bound, right_bound]
+        epsilon_sim = ((left_bound + right_bound) * rand_val - left_bound) * ni
         ###########################################
         
         # This is the full data signal, with the true mu (x0) and simulated noise
