@@ -94,6 +94,7 @@ wandb/
 *.jpeg
 
 # Prevent specific backup
+data_bin
 notebooks/week1/out/
 notebooks/week2/out/
 notebooks/week3/out/
