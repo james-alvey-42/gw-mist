@@ -110,7 +110,7 @@ for i in tqdm(range(numruns)):
 x_h0_all = torch.concatenate(x_h0_all).flatten()
 x_h1_all = torch.concatenate(x_h1_all).flatten()
 
-grid = np.linspace(-30,30, 1000)
+grid = np.linspace(-30,30, 1000000)
 
 print('creating H0 KDE')
 KDE_H0 = gaussian_kde(x_h0_all)
@@ -121,4 +121,4 @@ dat_h0 = KDE_H0.evaluate(grid)
 print('evaluating Hi KDE')
 dat_h1 = KDE_H1.evaluate(grid)
 print('saving....')
-np.savez('../../data_bin/KDE_ref/KDE_archive', dat_h0=dat_h0, dat_h1=dat_h1)
+np.savez('../../data_bin/KDE_ref/KDE_archive_big', dat_h0=dat_h0, dat_h1=dat_h1)
