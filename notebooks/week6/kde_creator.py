@@ -112,10 +112,13 @@ x_h1_all = torch.concatenate(x_h1_all).flatten()
 
 grid = np.linspace(-30,30, 1000)
 
+print('creating H0 KDE')
 KDE_H0 = gaussian_kde(x_h0_all)
+print('creating Hi KDE')
 KDE_H1 = gaussian_kde(x_h1_all)
-
+print('evaluating H0 KDE')
 dat_h0 = KDE_H0.evaluate(grid)
+print('evaluating Hi KDE')
 dat_h1 = KDE_H1.evaluate(grid)
-
+print('saving....')
 np.savez('../../data_bin/KDE_ref/KDE_archive', dat_h0=dat_h0, dat_h1=dat_h1)
