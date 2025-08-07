@@ -621,7 +621,7 @@ ax1.plot(x, x**2,lw=5, color='black')
 ax1.set_xlabel(r'$\epsilon$ Analytical')
 ax2.set_xlabel(r'$\epsilon$ Analytical')
 ax1.set_ylabel(r'$\mathrm{SNR}_i^2$')
-ax1.set_xlim([0,8])
+ax1.set_xlim([0,5])
 ax1.set_ylim([0,40])
 pf.fix_plot([ax1,ax2])
 plt.tight_layout()
@@ -1291,7 +1291,7 @@ for i in range(3):
 
 ###### SET UP GRID ######
 positions = torch.arange(0, Nbins, 1).to(dtype=simulator.dtype)
-amplitudes = torch.linspace(-3, 10, 50).to(dtype=simulator.dtype)
+amplitudes = torch.linspace(-3, 10, 80).to(dtype=simulator.dtype)
 
 position_grid, amplitude_grid = torch.meshgrid(positions,amplitudes)
 b = {'x':amplitude_grid.T}
@@ -1449,23 +1449,31 @@ ax3.plot(x_grid, p_values, lw=2, color='black', label='semi-analytical')
 ax3.set_ylabel(r'p$_i$')
 ax3.set_yscale('log')
 
-grid2 = dat[1]
-grid3 = dat[0]
+# grid2 = dat[1]
+# grid3 = dat[0]
 
+labz = [r'BCE',r'eMu-s']
+cz = [mycolors[0], '#ff004f']
 for i in range(100):
-      randbin = np.random.randint(0,100)
-      # randbin=0
-      randp = grid2[:,i]
-      muat = obs['mu'][0][randbin].numpy()
-      amplitudes = np.linspace(-3, 10, 80)-muat
-      ax3.plot(amplitudes, randp, lw=3, color='#ff004f', label=r'eMu-s' if i==0 else None, alpha=0.5)
+    # randbin = np.random.randint(0,100)
+    # randbin=0
 
-      randp_BCE = grid3[:,i]
-      muat = obs['mu'][0][randbin].numpy()
-      amplitudes = np.linspace(-3, 10, 80)-muat
-      ax3.plot(amplitudes, randp_BCE, lw=3, color=mycolors[0], label=r'BCE' if i==0 else None, alpha=0.5)
+    # randp = grid2[:,i]
+    # randp_BCE = grid3[:,i]
+
+    # ax3.plot(amplitudes, randp, lw=3, color='#ff004f', label= if i==0 else None, alpha=0.5)
+    # ax3.plot(amplitudes, randp_BCE, lw=3, color=mycolors[0], label=r'BCE' if i==0 else None, alpha=0.5)
+
+    muat = obs['mu'][0][i].numpy()
+    amplitudes = np.linspace(-3, 10, 80)-muat
+
+    for j in range(2):
+        ax3.plot(amplitudes, dat[j][:,i], lw=3, color=cz[j], label=labz[j] if i==0 else None, alpha=0.5)
+
 
 ax3.legend(fontsize=12)
+ax3.set_ylim([9e-7,10])
 pf.fix_plot([ax1,ax2,ax3])
+
 plt.tight_layout()
-plt.savefig(f'figs/pdf2_log.png', dpi=700, bbox_inches = 'tight')
+plt.savefig(f'figs/{netid}/pdf2_log.png', dpi=700, bbox_inches = 'tight')

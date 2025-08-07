@@ -18,7 +18,7 @@ class Simulator_Additive:
         - device (str): Device to run the tensors on.
         - dtype (torch.dtype): Data type of the tensors.
         - mode (str): white, complex or gw - simulation generation mode
-        - bump (str): None, det or stoch - whether to generate a bump as mu
+        - bump (str or list): None, det or [a,m,s] - whether to generate a bump as mu and whether it is stochastic or not
         - pve_bounds (bool): If True, 
         """
         self.mode = mode
