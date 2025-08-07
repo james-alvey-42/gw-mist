@@ -5,6 +5,7 @@ torch.set_float32_matmul_precision('medium')
 import numpy as np
 import scipy
 from scipy.stats import norm
+from scipy.interpolate import interp1d
 import plotfancy as pf
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
@@ -1434,8 +1435,8 @@ plt.setp(ax3.get_xticklabels(), visible=False)
 grid = np.linspace(-30,30, 1000)
 ti = -2 * (np.log(dat_h0)-np.log(dat_h1))
 
-ax1.plot(grid,dat_h0, color='#ff004f', label=r'H$_0$', lw=3)
-ax1.plot(grid,dat_h1, color='#77aca2', label=r'H$_i$', lw=3)
+ax1.plot(grid,dat_h0, color='#BA1200', label=r'H$_0$', lw=3)
+ax1.plot(grid,dat_h1, color='#39304A', label=r'H$_i$', lw=3)
 ax1.legend()
 ax1.set_xlim([-1.5,4.5])
 ax1.set_xlabel(r'$\tilde{d}(f)$')
@@ -1448,16 +1449,21 @@ ax3.plot(x_grid, p_values, lw=2, color='black', label='semi-analytical')
 ax3.set_ylabel(r'p$_i$')
 ax3.set_yscale('log')
 
-grid = np.load('data_bin/pvaluegrid.npy')
+grid2 = dat[1]
+grid3 = dat[0]
 
-for i in range(50):
+for i in range(100):
       randbin = np.random.randint(0,100)
       # randbin=0
-      randp = grid[:,randbin]
+      randp = grid2[:,i]
       muat = obs['mu'][0][randbin].numpy()
       amplitudes = np.linspace(-3, 10, 80)-muat
-      # ax3.plot(amplitudes, randp, lw=3, color='#598392', label=r'eMu-s'+f', bin {randbin}')
-      ax3.plot(amplitudes, randp, lw=3, color='#598392', label=r'eMu-s' if i==0 else None, alpha=0.5)
+      ax3.plot(amplitudes, randp, lw=3, color='#ff004f', label=r'eMu-s' if i==0 else None, alpha=0.5)
+
+      randp_BCE = grid3[:,i]
+      muat = obs['mu'][0][randbin].numpy()
+      amplitudes = np.linspace(-3, 10, 80)-muat
+      ax3.plot(amplitudes, randp_BCE, lw=3, color=mycolors[0], label=r'BCE' if i==0 else None, alpha=0.5)
 
 ax3.legend(fontsize=12)
 pf.fix_plot([ax1,ax2,ax3])
