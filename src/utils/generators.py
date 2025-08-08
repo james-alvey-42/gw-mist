@@ -7,7 +7,8 @@ import gw150814_simulator as gs
 class Simulator_Additive:
     def __init__(self, Nbins, sigma, bounds=5, fraction=None, 
                  sample_fraction=False, bkg=False, device='cpu', 
-                 dtype=torch.float64, mode=None, bump = None, pve_bounds =True ):
+                 dtype=torch.float64, mode=None, bump = None, pve_bounds =True,
+                 lock_amp = False, lock_mu=False, lock_sigma=False):
         """
         Args:
         - Nbins (int): Number of bins in the histogram.
@@ -42,6 +43,10 @@ class Simulator_Additive:
         self.bump = bump
         self.pve_bounds = pve_bounds
 
+        self.lock_amp = lock_amp
+        self.lock_mu = lock_mu
+        self.lock_sigma = lock_sigma
+
         # print(f'self.Nbins {self.Nbins}')
         # print(f'shape of self.grid {self.grid.shape}')
 
@@ -55,7 +60,15 @@ class Simulator_Additive:
         else:
             norm = torch.tensor([self.Nbins/5,4,self.Nbins/5])
             start = torch.tensor([self.Nbins/2, 1,self.Nbins/6])
-            return torch.rand(Nsims, 3, device=self.device, dtype=self.dtype) * norm + start
+            theta = torch.rand(Nsims, 3, device=self.device, dtype=self.dtype) * norm + start
+            ### TEMPORARY CHANGE TO CONSTRAIN ONE ELEMENT ###
+            if self.lock_mu:
+                theta[0] = self.Nbins/2
+            if self.lock_amp:
+                theta[1] = 3
+            if self.lock_sigma:
+                theta[2] = 20
+            return theta
 
     def get_mu(self, theta: torch.Tensor) -> torch.Tensor:
         Nsims = theta.shape[0]
