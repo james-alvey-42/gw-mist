@@ -1424,7 +1424,7 @@ num_extreme_vals_mask = t_samples > actual_t_values[:,
       np.newaxis]
 num_extreme_vals = np.sum(num_extreme_vals_mask, axis=1)
 p_values = num_extreme_vals / len(t_samples)
-p_values[p_values == 0] = 1e-21
+p_values[p_values == 0] = 1e-7
 
 fig, ax1 = pf.create_plot(size=(4,1.5))
 ax2 = fig.add_axes((0,1,1,1), sharex=ax1)
@@ -1445,7 +1445,7 @@ ax1.set_ylabel(r'$\mathbb{P}(\tilde{d}|...)$')
 ax2.plot(grid,ti, lw=2,color='black')
 ax2.set_ylabel(r'$-2\:\log\frac{p(\tilde{d}|H_0)}{p(\tilde{d}|H_i)}$')
 
-ax3.plot(x_grid, p_values, lw=2, color='black', label='semi-analytical')
+ax3.plot(x_grid, p_values, lw=2, color='black', label='semi-analytical', zorder=10)
 ax3.set_ylabel(r'p$_i$')
 ax3.set_yscale('log')
 
@@ -1472,7 +1472,7 @@ for i in range(100):
 
 
 ax3.legend(fontsize=12)
-ax3.set_ylim([9e-7,10])
+ax3.set_ylim([3e-8,10])
 pf.fix_plot([ax1,ax2,ax3])
 
 plt.tight_layout()
