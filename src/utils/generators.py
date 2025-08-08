@@ -62,11 +62,12 @@ class Simulator_Additive:
         if self.bump != 'stoch':
             return theta_locked if self.spec_theta == None else self.spec_theta
         else:
-            norm = torch.tensor([self.Nbins/5,4,self.Nbins/5])
+            norm = torch.tensor([self.Nbins/5,1,self.Nbins/5])
             start = torch.tensor([self.Nbins/2, 1,self.Nbins/6])
             theta = torch.rand(Nsims, 3, device=self.device, dtype=self.dtype) * norm + start
             locks = torch.tensor([self.lock_mu, self.lock_amp, self.lock_sigma], device=self.device, dtype=torch.bool)
-            return torch.where(locks, theta_locked, theta)
+            output = torch.where(locks, theta_locked, theta)
+            return output
 
 
     def get_mu(self, theta: torch.Tensor) -> torch.Tensor:
