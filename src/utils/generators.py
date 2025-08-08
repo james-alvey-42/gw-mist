@@ -8,6 +8,7 @@ class Simulator_Additive:
     def __init__(self, Nbins, sigma, bounds=5, fraction=None, 
                  sample_fraction=False, bkg=False, device='cpu', 
                  dtype=torch.float64, mode=None, bump = None, pve_bounds =True,
+                 specific_theta = None,
                  lock_amp = False, lock_mu=False, lock_sigma=False):
         """
         Args:
@@ -47,6 +48,8 @@ class Simulator_Additive:
         self.lock_mu = lock_mu
         self.lock_sigma = lock_sigma
 
+        self.spec_theta = specific_theta
+
         # print(f'self.Nbins {self.Nbins}')
         # print(f'shape of self.grid {self.grid.shape}')
 
@@ -57,21 +60,13 @@ class Simulator_Additive:
         ##### NB YOU WILL NEED TO CHANGE THIS FOR THE GW METHOD - ONLY WORKS FOR GRID ON 0-100 HERE ####
         theta_locked = torch.tensor([self.Nbins/2,3,20])*torch.ones(Nsims, 3)
         if self.bump != 'stoch':
-            return theta_locked
+            return theta_locked if self.spec_theta == None else self.spec_theta
         else:
             norm = torch.tensor([self.Nbins/5,4,self.Nbins/5])
             start = torch.tensor([self.Nbins/2, 1,self.Nbins/6])
             theta = torch.rand(Nsims, 3, device=self.device, dtype=self.dtype) * norm + start
             locks = torch.tensor([self.lock_mu, self.lock_amp, self.lock_sigma], device=self.device, dtype=torch.bool)
             return torch.where(locks, theta_locked, theta)
-            ### TEMPORARY CHANGE TO CONSTRAIN ONE ELEMENT ###
-            # if self.lock_mu:
-            #     theta[0] = self.Nbins/2
-            # if self.lock_amp:
-            #     theta[1] = 3
-            # if self.lock_sigma:
-            #     theta[2] = 20
-            # return theta
 
 
     def get_mu(self, theta: torch.Tensor) -> torch.Tensor:
