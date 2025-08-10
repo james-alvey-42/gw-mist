@@ -92,6 +92,7 @@ wandb/
 *.png
 *.jpg
 *.jpeg
+*.gif
 
 # Prevent specific backup
 data_bin
