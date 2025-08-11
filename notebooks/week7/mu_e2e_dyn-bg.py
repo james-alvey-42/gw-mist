@@ -64,7 +64,7 @@ glob_locks = [args.unlock_mu, args.unlock_amp, args.unlock_sigma] # mu amp sigma
 
 
 # Nsims = 100_000
-# Nbins = 100
+# Nbins = 100s
 # train_bounds = 5
 
 simulator = Simulator_Additive(Nbins=Nbins, sigma=glob_sigma, bounds=train_bounds, 
