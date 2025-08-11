@@ -62,7 +62,7 @@ class Simulator_Additive:
         if self.bump != 'stoch':
             return theta_locked if self.spec_theta == None else self.spec_theta
         else:
-            norm = torch.tensor([self.Nbins/5,1,20])
+            norm = torch.tensor([self.Nbins/5,1,8])
             start = torch.tensor([self.Nbins/2, 3,self.Nbins/24])
             theta = torch.abs(torch.rand(Nsims, 3, device=self.device, dtype=self.dtype) * norm + start)
             locks = torch.tensor([self.lock_mu, self.lock_amp, self.lock_sigma], device=self.device, dtype=torch.bool)
