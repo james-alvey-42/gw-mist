@@ -93,6 +93,8 @@ wandb/
 *.jpg
 *.jpeg
 *.gif
+!notebooks/week7/for_noemi/*
+
 
 # Prevent specific backup
 data_bin
