@@ -1,6 +1,8 @@
 import numpy as np
 import torch
 import sys
+import jax
+import jax.numpy as jnp
 sys.path.append('../../mist-base/GW')
 import gw150814_simulator as gs
 
@@ -41,7 +43,7 @@ class Simulator_Additive:
             self.grid = torch.linspace(0, self.Nbins, self.Nbins, device=device, dtype=dtype)
 
             self.frange = [0,self.Nbins] if (frange[0] == None) else frange
-            self.mask = (self.grid>=self.frange[0])&(self.grid<=self.frange[1])
+            self.mask = (self.grid>=self.frange[0])&(self.grid<self.frange[1])
             self.grid_chopped = self.grid[self.mask]
 
         self.device = device
@@ -72,7 +74,7 @@ class Simulator_Additive:
         prefactor = np.sqrt(self.gw.psd) / np.sqrt(2 * self.gw.delta_f)
         noise_fd = prefactor * white_noise_fd
         # noise_fd_filtered = noise_fd * self.gw.filter
-        torch_mask = torch.as_tensor(self.mask)
+        torch_mask = torch.from_numpy(np.array(self.mask))
         return (torch.tensor(np.abs(noise_fd))/self.psdnorm)[:,torch_mask]
     
     def _fd_theta_batched(self,nsims):
@@ -95,7 +97,7 @@ class Simulator_Additive:
             {"ra": ra_batch, "dec": dec_batch, "psi": psi_batch, "gmst": self.gw.gmst},
         )
         wf_fd_block = torch.from_numpy(np.array(wf_fd_batch))
-        torch_mask = torch.as_tensor(self.mask)
+        torch_mask = torch.from_numpy(np.array(self.mask))
         return (torch.abs(wf_fd_block) / self.psdnorm)[:,torch_mask]
     
     ############### STOCHAISTIC GAUSSIAN SETUP STUFF ############
@@ -121,7 +123,7 @@ class Simulator_Additive:
         grid = self.grid_chopped*torch.ones([nsims,len(self.grid_chopped)])
         mu = self._gauss(grid, theta[:,0].unsqueeze(-1), theta[:,1].unsqueeze(-1), theta[:,2].unsqueeze(-1))
         torch_mask = torch.as_tensor(self.mask)
-        return mu
+        return (mu)[:,torch_mask]
     
     ######### GET COMMANDS ############
 
