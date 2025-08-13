@@ -93,7 +93,7 @@ wandb/
 *.jpg
 *.jpeg
 *.gif
-!notebooks/week7/for_noemi/*
+!notebooks/week7/for_noemi/gifs/*.gif
 
 
 # Prevent specific backup
