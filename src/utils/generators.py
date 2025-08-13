@@ -8,7 +8,7 @@ class Simulator_Additive:
     def __init__(self, Nbins, sigma, bounds=5, fraction=None, 
                  sample_fraction=False, bkg=False, device='cpu', 
                  dtype=torch.float64, mode=None, bump = None,
-                 specific_theta = None,
+                 specific_theta = None, frange = [None,None],
                  lock_amp = False, lock_mu=False, lock_sigma=False):
         """
         Args:
@@ -27,12 +27,22 @@ class Simulator_Additive:
             default = gs.defaults
             default['posterior_samples_path'] = '../../mist-base/GW/GW150814_posterior_samples.npz'
             self.gw = gs.GW150814(settings=default)
+
             self.Nbins = len(self.gw.frequencies)
+            
+
+            self.frange = [20,1024] if (frange[0] == None) else frange
+            self.mask = (self.gw.frequencies>=self.frange[0])&(self.gw.frequencies<self.frange[1])
             self.grid = self.gw.frequencies
+            self.grid_chopped[self.mask]
             self.psdnorm = torch.tensor(np.sqrt(self.gw.psd))
         else: 
             self.Nbins = Nbins
-            self.grid = torch.linspace(0, 100, self.Nbins, device=device, dtype=dtype)
+            self.grid = torch.linspace(0, self.Nbins, self.Nbins, device=device, dtype=dtype)
+
+            self.frange = [0,self.Nbins] if (frange[0] == None) else frange
+            self.mask = (self.grid>=self.frange[0])&(self.grid<self.frange[1])
+            self.grid_chopped = self.grid[self.mask]
 
         self.device = device
         self.dtype = dtype
@@ -61,8 +71,8 @@ class Simulator_Additive:
         ) / np.sqrt(2)
         prefactor = np.sqrt(self.gw.psd) / np.sqrt(2 * self.gw.delta_f)
         noise_fd = prefactor * white_noise_fd
-        noise_fd_filtered = noise_fd * self.gw.filter
-        return torch.tensor(np.abs(noise_fd))/self.psdnorm
+        # noise_fd_filtered = noise_fd * self.gw.filter
+        return (torch.tensor(np.abs(noise_fd))/self.psdnorm)[:, self.mask]
     
     def _fd_theta_batched(self,nsims):
         choices = np.random.choice(self.gw.posterior_array.shape[0], size=nsims, replace=True)
@@ -84,7 +94,7 @@ class Simulator_Additive:
             {"ra": ra_batch, "dec": dec_batch, "psi": psi_batch, "gmst": self.gw.gmst},
         )
         wf_fd_block = torch.from_numpy(np.array(wf_fd_batch))
-        return torch.abs(wf_fd_block) / self.psdnorm
+        return (torch.abs(wf_fd_block) / self.psdnorm)[:,self.mask]
     
     ############### STOCHAISTIC GAUSSIAN SETUP STUFF ############
 
@@ -107,7 +117,7 @@ class Simulator_Additive:
     def _gauss_mu_batched(self,nsims,theta:torch.Tensor):
         grid = torch.arange(self.Nbins).unsqueeze(0)*torch.ones([nsims,self.Nbins])
         mu = self._gauss(grid, theta[:,0].unsqueeze(-1), theta[:,1].unsqueeze(-1), theta[:,2].unsqueeze(-1))
-        return mu
+        return (mu)[:,self.mask]
     
     ######### GET COMMANDS ############
 
@@ -195,6 +205,8 @@ class Simulator_Additive:
     def sample(self, Nsims: int = 1) -> dict:
         sample = self._sample(Nsims)
         return sample
+
+
     
 class Simulator_Additive_Legacy:
     def __init__(self, Nbins, sigma, bounds=5, fraction=None, 
