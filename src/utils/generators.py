@@ -6,6 +6,12 @@ import jax.numpy as jnp
 sys.path.append('../../mist-base/GW')
 import gw150814_simulator as gs
 
+import numpy as np
+import torch
+import sys
+sys.path.append('../../mist-base/GW')
+import gw150814_simulator as gs
+
 class Simulator_Additive:
     def __init__(self, Nbins, sigma, bounds=5, fraction=None, 
                  sample_fraction=False, bkg=False, device='cpu', 
