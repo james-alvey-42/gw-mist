@@ -4,12 +4,7 @@ import sys
 import jax
 import jax.numpy as jnp
 sys.path.append('../../mist-base/GW')
-import gw150814_simulator as gs
-
-import numpy as np
-import torch
-import sys
-sys.path.append('../../mist-base/GW')
+sys.path.append('mist-base/GW')
 import gw150814_simulator as gs
 
 class Simulator_Additive:
@@ -49,7 +44,7 @@ class Simulator_Additive:
             self.grid = torch.linspace(0, self.Nbins, self.Nbins, device=device, dtype=dtype)
 
             self.frange = [0,self.Nbins] if (frange[0] == None) else frange
-            self.mask = (self.grid>=self.frange[0])&(self.grid<self.frange[1])
+            self.mask = (self.grid>=self.frange[0])&(self.grid<=self.frange[1])
             self.grid_chopped = self.grid[self.mask]
 
         self.device = device
@@ -84,12 +79,19 @@ class Simulator_Additive:
         return (torch.tensor(np.abs(noise_fd))/self.psdnorm)[:,torch_mask]
     
     def _fd_theta_batched(self,nsims):
-        choices = np.random.choice(self.gw.posterior_array.shape[0], size=nsims, replace=True)
-        params_batch = self.gw.posterior_array[choices]
-        return params_batch
+        if self.bump != 'stoch':
+            choices = np.random.choice(self.gw.posterior_array.shape[0], size=1, replace=True)
+            single_param_set = self.gw.posterior_array[choices]
+            params_batch = np.tile(single_param_set, (nsims, 1))
+            return torch.from_numpy(params_batch)
+        else:
+            choices = np.random.choice(self.gw.posterior_array.shape[0], size=nsims, replace=True)
+            params_batch = self.gw.posterior_array[choices]
+            return torch.from_numpy(params_batch)
 
-    def _fd_waveform_batched(self, params_batch):
-        theta_ripple_batch = jnp.array(params_batch[:, :8])
+    def _fd_waveform_batched(self, params_batch_tensor):
+        params_batch = params_batch_tensor.numpy()
+        theta_ripple_batch = params_batch[:, :8]
         ra_batch, dec_batch, psi_batch = params_batch[:, 8], params_batch[:, 9], params_batch[:, 10]
         batched_waveform = jax.vmap(self.gw.call_waveform)
         batched_detector_response = jax.vmap(
@@ -126,7 +128,7 @@ class Simulator_Additive:
     
     def _gauss_mu_batched(self,nsims,theta:torch.Tensor):
         # grid = torch.arange(self.Nbins).unsqueeze(0)*torch.ones([nsims,self.Nbins])
-        grid = self.grid_chopped*torch.ones([nsims,len(self.grid_chopped)])
+        grid = self.grid*torch.ones([nsims,len(self.grid)])
         mu = self._gauss(grid, theta[:,0].unsqueeze(-1), theta[:,1].unsqueeze(-1), theta[:,2].unsqueeze(-1))
         torch_mask = torch.as_tensor(self.mask)
         return (mu)[:,torch_mask]
