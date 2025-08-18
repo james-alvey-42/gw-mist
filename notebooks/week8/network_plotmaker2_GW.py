@@ -83,7 +83,7 @@ def ts_sbi(x: dict, model: int =0):
     x = dict_to_cpu(x)
     return t
 
-def chop_middle(array, remove=5, linemode=True):
+def chop_middle(array, remove=50, linemode=True):
     if len(array)%2==0:
         mid_u = int(len(array)/2)
         mid_d = mid_u -1
@@ -1255,7 +1255,7 @@ def plot_together_new(
     mu_label = 'Deterministic' if glob_det=='det' else 'Stochastic'
     eps_label = 'Symmetric'
 
-    ax1.set_title(f"Data: Training {mu_label} "+r'$\mu$'+f' On {eps_label} '+r'$\epsilon$')
+    ax1.set_title(f"Data: Training {mu_label} "+r'$\mu$'+f' On symmetric '+r'$\epsilon$')
 
     ####### NEW HISTOGRAM #########
     ax_hist.hist(x0-mu, orientation='horizontal', color='white', 
@@ -1440,10 +1440,10 @@ for q in range(2):
             # print(a)
             axs[2*q].plot(chop_middle(positions)[j], chop_middle(obs['mu'][0]+quantiles[-i])[j], color='white', alpha=alp)
 
-    x = 47
+    x = Nbins/2
     axs[2*q].text(x,obs['mu'][0][int(x)], r'$\mu$', color='white', size=20)
     sigs = [r'$+3\sigma$',r'$+2\sigma$',r'$+\sigma$',r'$\bar{x}_0$']
-    x2 = 49
+    x2 = Nbins/2
     ff = torch.Tensor([0,0,0,-1])
     for i in range(1,5):
         axs[2*q].text(x2,(obs['mu'][0]+quantiles[-i])[int(x2)], sigs[i-1], color='white', size=12, ha='center')  
@@ -1479,7 +1479,7 @@ ax3 = fig.add_axes((0, 1.1,1,1))
 plt.setp(ax3.get_xticklabels(), visible=False)
 ax4 = fig.add_axes((1.05, 1.1,0.1,1))
 
-ax3.set_title(f"Data: Training {mu_label} "+r'$\mu$'+f' On {eps_label} '+r'$\epsilon$')
+ax3.set_title(f"Data: Training {mu_label} "+r'$\mu$'+f' On Symmetric '+r'$\epsilon$')
 
 axs = [ax1,ax2,ax3,ax4]
 
