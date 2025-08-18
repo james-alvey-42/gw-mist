@@ -177,7 +177,6 @@ axs[1].plot(epochs, bounds_history, label='Bounds', color='orange')
 axs[1].set_xlabel('Epoch')
 axs[1].set_ylabel('Bounds')
 
-pf.fix_plot([axs])
 
 plt.tight_layout()
 plt.savefig(f'figs/{netid}/bounds.png', dpi=300)
@@ -201,6 +200,5 @@ for i_b, b in enumerate(bounds_history):
             data =  sample['x0'] + epsilon_sim * ni
             axs[i_b].plot(data[0].cpu(), c='C0', alpha=0.4)
 
-pf.fix_plot([axs])
 plt.tight_layout()
 plt.savefig(f'figs/{netid}/history.png', dpi=300)
