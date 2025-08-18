@@ -422,3 +422,37 @@ class CustomLossModule_withBounds(pl.LightningModule):
             return optimizer
 
         
+class NewLossModule_withBounds(CustomLossModule_withBounds):
+    def validation_step(self, batch, batch_idx):
+        loss = self.model(batch)
+        self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        return loss
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
+
+        if self.lr_scheduler_name == 'ReduceLROnPlateau':
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer,
+                patience=self.lr_scheduler_params.get('patience', 5),
+                factor=self.lr_scheduler_params.get('factor', 0.5)
+            )
+            return {
+                'optimizer': optimizer,
+                'lr_scheduler': {
+                    'scheduler': scheduler,
+                    'monitor': 'val_loss',
+                    'interval': 'epoch',
+                    'frequency': 1
+                }
+            }
+        else:
+            return optimizer
+
+    def configure_callbacks(self):
+        early_stop_callback = pl.callbacks.EarlyStopping(
+            monitor='val_loss',
+            patience=self.early_stopping_patience,
+            mode='min',
+        )
+        return [early_stop_callback]
