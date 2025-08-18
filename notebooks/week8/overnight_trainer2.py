@@ -45,7 +45,7 @@ train_bounds = 5
 # simulator = Simulator_Additive(100,1,5,0.02,mode='gw', bkg=False)
 simulator = Simulator_Additive(Nbins=Nbins, sigma=glob_sigma, bounds=train_bounds, 
                                fraction=0.2, bkg=glob_bkg, dtype=torch.float64, 
-                               mode='gw', bump=glob_det, frange=[20,240],
+                               mode='gw', bump=glob_det, frange=[20,1024],
                                lock_mu=glob_locks[0],lock_amp=glob_locks[1], lock_sigma=glob_locks[2])
 simulator._init_gw()
 
