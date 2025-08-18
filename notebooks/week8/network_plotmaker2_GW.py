@@ -1250,7 +1250,7 @@ def plot_together_new(
     ax1.plot(grid, obs['mu'][0]+dist, color="#ff7b5a", label=r"$\mu_{\mathrm{dist}}$")
     ax1.set_ylabel(r"$x_\mathrm{obs}$", labelpad=1.5)
     ax1.legend(bbox_to_anchor=(0.05, 1), fontsize=13, loc='upper left', labelspacing=0.1)
-    ax1.set_ylim(0, 8.5)
+    ax1.set_ylim(-2.5, 8.5)
 
     mu_label = 'Deterministic' if glob_det=='det' else 'Stochastic'
     eps_label = 'Symmetric'
@@ -1500,10 +1500,10 @@ for q in range(2):
             alp = .5+(i/8)
             axs[2*q].plot(chop_middle(positions)[j], chop_middle(obs['mu'][0]+quantiles[-i])[j], color=labcolour, alpha=alp)
 
-    x = 47
+    x = Nbins/2
     axs[2*q].text(x,obs['mu'][0][int(x)], r'$\mu$', color=labcolour, size=20)
     sigs = [r'$+3\sigma$',r'$+2\sigma$',r'$+\sigma$',r'$\bar{x}_0$']
-    x2 = 49
+    x2 = Nbins/2
     ff = torch.Tensor([0,0,0,-1])
     for i in range(1,5):
         axs[2*q].text(x2,(obs['mu'][0]+quantiles[-i])[int(x2)], sigs[i-1], color=labcolour, size=12, ha='center')  
@@ -1565,7 +1565,7 @@ ax3.set_yscale('log')
 # grid2 = dat[1]
 # grid3 = dat[0]
 
-labz = [r'BCE',r'eMu-s']
+labz = [r'BCE',r'SNR']
 cz = [mycolors[0], '#ff004f']
 for i in range(100):
     # randbin = np.random.randint(0,100)
