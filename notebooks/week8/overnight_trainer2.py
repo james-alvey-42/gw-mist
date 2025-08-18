@@ -140,7 +140,7 @@ network_epsilon = Network_epsilon(nbins=len(simulator.grid_chopped))
 model = CustomLossModule_withBounds(network_epsilon, learning_rate=3e-3)
 trainer = pl.Trainer(
     accelerator="gpu", 
-    max_epochs=100, 
+    max_epochs=25, 
     precision=64,
     # fast_dev_run=True
 )
