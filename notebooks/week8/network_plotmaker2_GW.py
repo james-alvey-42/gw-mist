@@ -139,6 +139,11 @@ parser.add_argument('--nobkg', action='store_false', help='Removes Background mu
 
 args = parser.parse_args()
 
+print("--- Running with the following configuration ---")
+print(f"Sigma: {args.sigma}, Nsims: {args.nsims}, Nbins: {args.nbins}, Bounds: {args.bounds}")
+print(f"Mode: {args.mode}, Deterministic: {args.det}, Background: {not args.nobkg}")
+print("------------------------------------------------")
+
 glob_sigma = args.sigma
 glob_bkg = args.nobkg
 glob_det = args.det
@@ -151,7 +156,9 @@ train_bounds = args.bounds
 simulator = Simulator_Additive(Nbins=Nbins, sigma=glob_sigma, bounds=train_bounds, 
                                fraction=0.2, bkg=glob_bkg, dtype=torch.float32, 
                                mode=glob_mode, bump=glob_det)     
+print(f"\n--- Simulator initialized with mode: {glob_mode}, det: {glob_det}, bkg: {glob_bkg} ---")
 samples = simulator.sample(Nsims=Nsims)
+print(f"--- Sampled {Nsims} initial simulations ---")
 obs = simulator.sample(1)
 
 # p_marker = 'p' if glob_pve_bounds == True else 'n'
@@ -168,6 +175,8 @@ if not os.path.isdir('figs/'+netid):
 
 ######### NEURAL NETOWORK CODE #########
 
+print("\n--- Loading Neural Networks ---")
+
 ### -- make network -- ###
 
 
@@ -177,21 +186,93 @@ from models.unet_1d import UNet1d
 
 # - snr - #
 
+# class Network_epsilon(torch.nn.Module):
+#     def __init__(self):
+#         super().__init__()
+        
+#         self.logvariance = torch.nn.Parameter(torch.ones(Nbins)*5)
+#         self.net = ResidualNet(1, 1, hidden_features=128, num_blocks=2, kernel_size=1, padding=0) 
+
+#         self.mu_predictor = torch.nn.Sequential(
+#             torch.nn.Linear(Nbins, 128),
+#             torch.nn.ReLU(),
+#             torch.nn.Linear(128, 128),
+#             torch.nn.ReLU(),
+#             torch.nn.Linear(128, Nbins)
+#         )
+    
+#     def mu(self, x):
+#         x = self.mu_predictor(x.unsqueeze(1)).squeeze(1)
+#         return x
+                
+#     def epsilon(self, x):
+#         resd = x - self.mu(x)
+#         out = self.net(resd.unsqueeze(1)).squeeze(1) # x-net
+#         return out
+    
+#     def snr(self, x):
+#         return self.epsilon(x) / self.logvariance.exp().sqrt()  # [B, N_bins]
+    
+#     def bounds(self):
+#         return self.logvariance.detach().exp().sqrt().mean(-1) * 5
+        
+#     def forward(self, x):
+        
+#         # Adaptive data generation
+#         ni = x['ni']
+        
+#        # generate a noise block like x #
+#         x_shape = x['x0'].shape # [nsims,nbins]
+#         noise = torch.complex(torch.randn(x_shape).cuda(), torch.randn(x_shape).cuda()).cuda()
+#         norm_noise = torch.abs(noise)
+
+#         # generate a mu block like x #
+#         m, amp, sigma = [Nbins/2,3,20]
+#         grid = torch.arange(Nbins).cuda()
+#         mu = amp * torch.exp(-0.5 * ((grid - m) / sigma) ** 2)
+#         mu_block = (torch.ones(x_shape).cuda())*mu.unsqueeze(0)
+
+#         ###########################################
+#         epsilon_sim =  (2 * self.bounds() * torch.rand(x['x'].shape, 
+#                                                            device= x['x'].device, 
+#                                                            dtype= x['x'].dtype) - self.bounds()) * ni
+#         ###########################################
+        
+#         # data =  x['x0'] + epsilon_sim * ni
+
+#         data = norm_noise+mu_block+epsilon_sim
+        
+#         # net evaluation_m
+#         net_mu = self.mu(data)
+#         error_mu = (net_mu-mu)**2
+#         l_mu = error_mu / (self.logvariance.exp() + 1e-10) + self.logvariance 
+#         l_mu_return = l_mu.sum() * 0.5
+#         # net evaluation_e
+#         net_epsilon = self.epsilon(data)
+#         mask = ( x['ni'] != 0 )  
+#         squared_error_e = (net_epsilon - epsilon_sim)**2                                                  # [B, N_bins]
+#         l_e = squared_error_e / (self.logvariance.exp() + 1e-10) + self.logvariance                     # [B, N_bins]
+#         l_e_return = (l_e * mask.float()).sum() * 0.5
+
+#         return l_mu_return+l_e_return
+
 class Network_epsilon(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, nbins):
         super().__init__()
         
-        self.logvariance = torch.nn.Parameter(torch.ones(Nbins)*5)
-        self.net = ResidualNet(1, 1, hidden_features=128, num_blocks=2, kernel_size=1, padding=0) 
+        self.nbins = nbins
 
+        self.logvariance = torch.nn.Parameter(torch.ones(self.nbins)*5)
+
+        self.net = ResidualNet(1, 1, hidden_features=128, num_blocks=2, kernel_size=1, padding=0) 
         self.mu_predictor = torch.nn.Sequential(
-            torch.nn.Linear(Nbins, 128),
+            torch.nn.Linear(self.nbins, 128),
             torch.nn.ReLU(),
             torch.nn.Linear(128, 128),
             torch.nn.ReLU(),
-            torch.nn.Linear(128, Nbins)
+            torch.nn.Linear(128, self.nbins)
         )
-    
+
     def mu(self, x):
         x = self.mu_predictor(x.unsqueeze(1)).squeeze(1)
         return x
@@ -206,47 +287,37 @@ class Network_epsilon(torch.nn.Module):
     
     def bounds(self):
         return self.logvariance.detach().exp().sqrt().mean(-1) * 5
+
         
     def forward(self, x):
         
-        # Adaptive data generation
+        x0_block = x['x0']
+        mu_block = x['mu']
         ni = x['ni']
         
-       # generate a noise block like x #
-        x_shape = x['x0'].shape # [nsims,nbins]
-        noise = torch.complex(torch.randn(x_shape).cuda(), torch.randn(x_shape).cuda()).cuda()
-        norm_noise = torch.abs(noise)
-
-        # generate a mu block like x #
-        m, amp, sigma = [Nbins/2,3,20]
-        grid = torch.arange(Nbins).cuda()
-        mu = amp * torch.exp(-0.5 * ((grid - m) / sigma) ** 2)
-        mu_block = (torch.ones(x_shape).cuda())*mu.unsqueeze(0)
-
         ###########################################
         epsilon_sim =  (2 * self.bounds() * torch.rand(x['x'].shape, 
                                                            device= x['x'].device, 
                                                            dtype= x['x'].dtype) - self.bounds()) * ni
         ###########################################
-        
-        # data =  x['x0'] + epsilon_sim * ni
 
-        data = norm_noise+mu_block+epsilon_sim
+        data = x0_block+epsilon_sim
         
         # net evaluation_m
         net_mu = self.mu(data)
-        error_mu = (net_mu-mu)**2
-        l_mu = error_mu / (self.logvariance.exp() + 1e-10) + self.logvariance 
+        error_mu = (net_mu-mu_block)**2
+        l_mu = error_mu / (self.logvariance.exp() + 1e-10) + self.logvariance
         l_mu_return = l_mu.sum() * 0.5
+
         # net evaluation_e
         net_epsilon = self.epsilon(data)
-        mask = ( x['ni'] != 0 )  
-        squared_error_e = (net_epsilon - epsilon_sim)**2                                                  # [B, N_bins]
-        l_e = squared_error_e / (self.logvariance.exp() + 1e-10) + self.logvariance                     # [B, N_bins]
+        mask = ( ni != 0 )  
+        squared_error_e = (net_epsilon - epsilon_sim)**2                                         # [B, N_bins]
+        l_e = squared_error_e / (self.logvariance.exp() + 1e-21) + self.logvariance                   # [B, N_bins]
         l_e_return = (l_e * mask.float()).sum() * 0.5
-
-        return l_mu_return+l_e_return
-    
+        
+        # combine
+        return l_mu_return+l_e_return 
 
 # - bce - #
 
@@ -267,7 +338,7 @@ class Network_BCE(torch.nn.Module):
 
 ## - snr - ##
 
-network_epsilon = Network_epsilon()
+network_epsilon = Network_epsilon(Nbins)
 checkpoint = torch.load(f'networks/network_{netid}_complex', 
                         weights_only=False,map_location=torch.device('cpu'))
 sd = checkpoint.state_dict()
@@ -320,7 +391,9 @@ model_BCE.to(dtype=torch.float32,device='mps').eval()
 
 ######## MC ON DATA #########
 
-N_mc = 2e6
+print("\n--- Starting Monte Carlo on SNR data ---")
+N_mc = 5e5
+
 obs = simulator.sample(1)
 
 ni = torch.eye(Nbins, dtype=obs['xi'].dtype)
@@ -341,6 +414,7 @@ data_bin_H0 = np.concatenate(data_bin_H0)
 eps_bin_H0 = np.concatenate(eps_bin_H0)
 res_bin_H0 = np.concatenate(res_bin_H0)
 
+print("--- Starting Monte Carlo on BCE data ---")
 batch_size = 2048*2
 N_batch = int(N_mc / batch_size)
 ts_bin_H0_BCE = []
@@ -360,6 +434,8 @@ ts_bin_H0_BCE.shape
 
 ####### GET DISTRIBUTIONS ########
 
+print("\n--- Analyzing and plotting distributions ---")
+
 def get_quantiles(indata, nsig:int, sigma_key=False):
     data = np.sort(indata)
     sigmas = np.arange(-nsig,nsig+1,1)
@@ -372,11 +448,19 @@ def get_quantiles(indata, nsig:int, sigma_key=False):
 alldata = data_bin_H0.flatten()
 allres = res_bin_H0.flatten()
 mean = np.mean(allres)
-quantiles = get_quantiles(allres, 3)
-quantiles_long = get_quantiles(allres,5)
+# quantiles = get_quantiles(allres, 3)
+# quantiles_long = get_quantiles(allres,5)
+
+quantiles = np.array([0.05199686, 0.2145543,  0.58780088, 1.17737921, 1.91882754,
+ 2.75067576, 3.63463655])
+
+quantiles_long = np.array([7.11978022e-04, 7.96148769e-03, 5.19968566e-02, 2.14554300e-01,
+ 5.87800876e-01, 1.17737921e+00, 1.91882754e+00, 2.75067576e+00,
+ 3.63463655e+00, 4.55164698e+00, 5.49045819e+00])
 
 ###### GET RAW DISTRIBUTION #######
 
+print("--- Plotting raw data distribution ---")
 fig, ax1 = pf.create_plot(size=(4,2))
 bin = 42
 ax1.hist(res_bin_H0[:,bin], bins=50, density=True, color=mycolors[0],edgecolor='black', label=f'Bin {bin}')
@@ -433,6 +517,7 @@ plt.savefig('figs/distribution.png', dpi=700, bbox_inches = 'tight')
 
 ######## GET DISTRIBUTION WITH MU #######
 
+print("--- Plotting distribution with mu background ---")
 test = simulator.sample(1)
 quantiles_long = np.array([7.1508466e-04, 7.9613253e-03, 5.1986761e-02,
        2.1462703e-01, 5.8794379e-01, 1.1776060e+00,
@@ -475,11 +560,14 @@ plt.savefig(f'figs/data_visu_{d_marker}{b_marker}.png', dpi=700, bbox_inches = '
 
 #### MCMC WITH STATS ####
 
-###### SNR #######  
+print("\n--- Running MCMC with stats ---")
+
+###### SNR #######
+  
 
 ### - SNR - ###
 
-N_mc = 2e6
+N_mc = 5e5
 
 ni = torch.eye(Nbins, dtype=obs['xi'].dtype)
 variance = 1 / get_sigma_epsilon_inv2(ni)
@@ -498,8 +586,6 @@ ts_bin_H0_epsilon = np.concatenate(ts_bin_H0_epsilon)
 
 
 ### - BCE - ### 
-
-N_mc = 2e6
 
 ni = torch.eye(Nbins, dtype=obs['xi'].dtype)
 variance = 1 / get_sigma_epsilon_inv2(ni)
@@ -521,7 +607,10 @@ res_bin_H0 = np.concatenate(res_bin_H0)
 
 ##### PVALUES ######
 
+print("\n--- Calculating p-values ---")
+
 # snr #
+
 
 ni = torch.eye(Nbins, dtype=obs['xi'].dtype)
 variance = 1 / get_sigma_epsilon_inv2(ni)
@@ -557,7 +646,10 @@ pv_bin_H0 = p_values.reshape(N_mc, num_bins)
 
 ##### PARITY PLOTS #### SNR NETWORK PARITY
 
+print("\n--- Generating parity plots ---")
+print("--- Generating SNR network parity plot ---")
 pf.housestyle_rcparams()
+
 n = 50
 
 obs = simulator.sample(1)  
@@ -610,6 +702,7 @@ plt.savefig(f'figs/{netid}/parity.png', dpi=700, bbox_inches = 'tight')
 
 ##### PARITY PLOTS ##### SNR MASS PARITY
 
+print("--- Generating SNR mass parity plot ---")
 fig,ax1 = pf.create_plot(size=(3.5,3))
 ax2 = fig.add_axes((1.2,0,1,1))
 
@@ -630,6 +723,7 @@ plt.savefig(f'figs/{netid}/preditction_distribution.png', dpi=700, bbox_inches =
 
 ###### PARITY PLOTS ##### BCE MASS PARITY
 
+print("--- Generating BCE mass parity plot ---")
 fig,ax1 = pf.create_plot(size=(3.5,3))
 ax3 = fig.add_axes((1.2,0,1,1))
 
@@ -651,6 +745,8 @@ plt.savefig(f'figs/{netid}/BCE_parity.png', dpi=700, bbox_inches = 'tight')
 
 ##### TEST STATISTIC STUFF ##### SNR 
 
+print("\n--- Plotting test statistics ---")
+print("--- Plotting SNR test statistics ---")
 pf.housestyle_rcparams()
 grid = np.linspace(0, 10, 100) # 1 df, adjust
 chi2 = scipy.stats.chi2.pdf(grid, df=1, loc=0)
@@ -673,6 +769,7 @@ plt.savefig(f'figs/{netid}/histogram_complex.png', dpi=300)
 
 ##### TEST STATISTIC STUFF ##### SNR SUM
 
+print("--- Plotting summed SNR test statistics ---")
 DOF = Nbins
 
 ts_sum_H0_epsilon = ts_bin_H0_epsilon.sum(axis=1)
@@ -693,6 +790,7 @@ plt.savefig(f'figs/{netid}/histogram.png', dpi=700, bbox_inches = 'tight')
 
 ##### TEST STATISTIC STUFF ##### BCE 
 
+print("--- Plotting BCE test statistics ---")
 grid = np.linspace(0, 10, 100) # 1 df, adjust
 chi2 = scipy.stats.chi2.pdf(grid, df=1, loc=0)
 
@@ -716,6 +814,7 @@ plt.savefig(f'figs/{netid}/BCE_tis.png', dpi=700, bbox_inches = 'tight')
 
 ##### TEST STATISTIC STUFF ##### BCE SUM
 
+print("--- Plotting summed BCE test statistics ---")
 DOF = Nbins - 3 # 3 parameters
 
 ts_sum_H0_BCE = ts_bin_H0_BCE.sum(axis=1)
@@ -740,6 +839,8 @@ plt.savefig(f'figs/{netid}/BCE_hist.png', dpi=700, bbox_inches = 'tight')
 ############ P VALUES STUFF ##################
 
 
+print("\n--- Plotting p-value distributions and correlations ---")
+print("--- Plotting SNR p-value correlations ---")
 pf.housestyle_rcparams()
 bins_pairs = [(0, 1), (0, 10), (0, 90)]
 
@@ -761,6 +862,7 @@ pf.fix_plot(axs)
 plt.tight_layout()
 plt.savefig(f'figs/{netid}/correlations.png', dpi=700, bbox_inches = 'tight')
 
+print("--- Plotting SNR p-value distributions ---")
 pf.housestyle_rcparams()
 ### - CENTER AND RANK TS_SUM UNDER H0 - ###
 # Center the test statistic (e.g., chi-squared-like) under H0 by subtracting the mean
@@ -823,6 +925,7 @@ plt.savefig(f'figs/{netid}/pvaluedists.png', dpi=700, bbox_inches = 'tight')
 
 #### BCE #####################################################
 
+print("--- Plotting BCE p-value correlations ---")
 N_mc, num_bins = ts_bin_H0_BCE.shape
 ts_bin_flat = ts_bin_H0_BCE.reshape(N_mc, num_bins)
 means = ts_bin_flat.mean(axis=0)  # Shape: [num_bins]
@@ -856,6 +959,7 @@ pf.fix_plot(axs)
 plt.tight_layout()
 plt.savefig(f'figs/{netid}/BCE_correlations.png', dpi=700, bbox_inches = 'tight')
 
+print("--- Plotting BCE p-value distributions ---")
 ### - CENTER AND RANK TS_SUM UNDER H0 - ###
 # Center the test statistic (e.g., chi-squared-like) under H0 by subtracting the mean
 means = ts_sum_H0_BCE.mean(axis=0)  # Mean of summed test statistic across MC samples
@@ -916,6 +1020,8 @@ plt.savefig(f'figs/{netid}/BCE_distributions.png', dpi=700, bbox_inches = 'tight
 ########################################################################################
 ###################    FINAL COMPARISONS    ###################
 ########################################################################################
+
+print("\n--- Starting final comparisons and analysis ---")
 
 def analyse_obs_epsilon(obs):
     
@@ -1270,6 +1376,7 @@ def plot_together_new(
 bounds = [5,5,8]
 frac = [0.01,0.1,0.05]
 
+print("--- Generating final comparison plots for different simulator settings ---")
 for i in range(3):
     simulator1 = Simulator_Additive(Nbins=Nbins, sigma=glob_sigma, bkg=glob_bkg, 
                                     bounds=bounds[i], fraction=frac[i], dtype=torch.float32, 
@@ -1289,6 +1396,8 @@ for i in range(3):
     plt.savefig(f'figs/{netid}/complex_comparison_n{i}.png', dpi=700, bbox_inches = 'tight')
 
 ################# PART TWO ###########################
+
+print("\n--- Starting Part Two: Grid analysis ---")
 
 ###### SET UP GRID ######
 positions = torch.arange(0, Nbins, 1).to(dtype=simulator.dtype)
@@ -1347,6 +1456,8 @@ plt.tight_layout()
 plt.savefig(f'figs/{netid}/tmaps.png', dpi=700, bbox_inches = 'tight')
 
 ################### DO PVALUE PLOTS ###################
+
+print("--- Generating p-value maps ---")
 
 def pvalue_grid_eps(dat):
     eps_t_mean = np.mean(ts_bin_H0_epsilon, axis=0)
@@ -1407,6 +1518,7 @@ plt.savefig(f'figs/{netid}/pmaps.png', dpi=700, bbox_inches = 'tight')
 
 ##### SLICE MAP #######
 
+print("--- Generating slice map plot ---")
 x_h0_all = np.load('../../data_bin/stats_ref/x_h0_all.npy')
 
 kdebloc = np.load('../../data_bin/KDE_ref/KDE_archive.npz')
