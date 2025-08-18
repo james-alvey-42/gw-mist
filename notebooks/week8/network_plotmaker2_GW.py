@@ -129,20 +129,18 @@ parser = argparse.ArgumentParser(description='Script to make plots post NN train
 # numbers
 parser.add_argument('--sigma', type=float, default=1, help='White Noise Sigma (unused if complex)')
 parser.add_argument('--nsims', type=int, default=100_000, help='Global Nsims')
-parser.add_argument('--nbins', type=int, default=100, help='Global Nbins to simulate over')
+parser.add_argument('--nbins', type=int, default=1024, help='Global Nbins to simulate over')
 parser.add_argument('--bounds', type=int, default=5, help='Global bounds to run simulator on')
 # strings
 parser.add_argument('--mode', type=str, default='complex', help='Global Simulator mode')
 parser.add_argument('--det', type=str, default='det', help='Are simulators deterministic or stochastic? det or stoch.')
 #bools
-parser.add_argument('--pvebounds', action='store_true', help='Positive bounds? Uniform by default')
 parser.add_argument('--nobkg', action='store_false', help='Removes Background mu')
 
 args = parser.parse_args()
 
 glob_sigma = args.sigma
 glob_bkg = args.nobkg
-glob_pve_bounds = args.pvebounds
 glob_det = args.det
 glob_mode = args.mode
 
@@ -152,16 +150,18 @@ train_bounds = args.bounds
 
 simulator = Simulator_Additive(Nbins=Nbins, sigma=glob_sigma, bounds=train_bounds, 
                                fraction=0.2, bkg=glob_bkg, dtype=torch.float32, 
-                               mode=glob_mode, pve_bounds=glob_pve_bounds, bump=glob_det)     
+                               mode=glob_mode, bump=glob_det)     
 samples = simulator.sample(Nsims=Nsims)
 obs = simulator.sample(1)
 
-p_marker = 'p' if glob_pve_bounds == True else 'n'
+# p_marker = 'p' if glob_pve_bounds == True else 'n'
 b_marker = 'b' if glob_bkg == True else 'q'
 d_marker = 'd' if glob_det == 'det' else 's'
 # netid = p_marker+b_marker+s_marker+str(train_bounds)
-netid = 'eMu-d_'+p_marker+b_marker+d_marker+str(train_bounds)
-print(f'netid {netid}')
+# netid = 'eMu-d_'+p_marker+b_marker+d_marker+str(train_bounds)
+# print(f'netid {netid}')
+
+netid = 'GW_q_1024'
 
 if not os.path.isdir('figs/'+netid):
     os.makedirs('figs/'+netid)
@@ -460,7 +460,7 @@ ax2.plot(resd, color='#ff004f')
 ax2.set_xlabel(r'$f$')
 ax2.set_ylabel(r'res ($x_0$)')
 ax2.set_ylim([0,4.4])
-grid = torch.linspace(0, 100, 100)
+grid = torch.linspace(0, Nbins, Nbins)
 for i in range(1,6):
     ax1.fill_between(grid, quantiles_long[i]+test['mu'][0], quantiles_long[-i]+test['mu'][0],  color='#b0b0b0', alpha=0.1)
     ax2.fill_between(grid, quantiles_long[i], quantiles_long[-i],  color='#b0b0b0', alpha=0.1)
@@ -1147,7 +1147,7 @@ def plot_together_new(
     ax1.set_ylim(0, 8.5)
 
     mu_label = 'Deterministic' if glob_det=='det' else 'Stochastic'
-    eps_label = 'Positive' if glob_pve_bounds else 'Symmetric'
+    eps_label = 'Symmetric'
 
     ax1.set_title(f"Data: Training {mu_label} "+r'$\mu$'+f' On {eps_label} '+r'$\epsilon$')
 
@@ -1273,7 +1273,7 @@ frac = [0.01,0.1,0.05]
 for i in range(3):
     simulator1 = Simulator_Additive(Nbins=Nbins, sigma=glob_sigma, bkg=glob_bkg, 
                                     bounds=bounds[i], fraction=frac[i], dtype=torch.float32, 
-                                    mode=glob_mode, pve_bounds=glob_pve_bounds, bump=glob_det) 
+                                    mode=glob_mode, bump=glob_det) 
     obs = simulator1.sample(1) 
         
     ts_bin_obs, ts_bin_analytical, p_nn_BCE, p_analytical_BCE, p_sum_nn_BCE, p_sum_analytical_BCE, p_glob_all_BCE = analyse_obs_BCE(obs)
@@ -1313,8 +1313,8 @@ ax4 = fig.add_axes((1.05, 1.1,0.1,1))
 axs = [ax1,ax2,ax3,ax4]
 
 mu_label = 'Deterministic' if glob_det=='det' else 'Stochastic'
-eps_label = 'Positive' if glob_pve_bounds else 'Symmetric'
-ax3.set_title(f"Data: Training {mu_label} "+r'$\mu$'+f' On {eps_label} '+r'$\epsilon$')
+# eps_label = 'Positive' if glob_pve_bounds else 'Symmetric'
+ax3.set_title(f"Data: Training {mu_label} "+r'$\mu$'+f' On Symmetric '+r'$\epsilon$')
 
 
 for q in range(2):
