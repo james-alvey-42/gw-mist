@@ -35,7 +35,7 @@ folly = '#ff004f'
 glob_sigma = 1
 glob_bkg = True
 glob_pve_bounds = False
-glob_det = 'det'
+glob_det = 'stoch'
 glob_locks = [True, True, True] # mu amp sigma
 
 # Nsims = 100_000
@@ -45,7 +45,7 @@ train_bounds = 5
 # simulator = Simulator_Additive(100,1,5,0.02,mode='gw', bkg=False)
 simulator = Simulator_Additive(Nbins=Nbins, sigma=glob_sigma, bounds=train_bounds, 
                                fraction=0.2, bkg=glob_bkg, dtype=torch.float64, 
-                               mode='gw', bump=glob_det, frange=[20,1024],
+                               mode='gw', bump=glob_det, frange=[10,500],
                                lock_mu=glob_locks[0],lock_amp=glob_locks[1], lock_sigma=glob_locks[2])
 simulator._init_gw()
 
@@ -140,7 +140,7 @@ network_epsilon = Network_epsilon(nbins=len(simulator.grid_chopped))
 model = NewLossModule_withBounds(network_epsilon, learning_rate=3e-3)
 trainer = pl.Trainer(
     accelerator="gpu", 
-    max_epochs=40, 
+    max_epochs=50, 
     precision=64,
     # fast_dev_run=True
 )
@@ -152,9 +152,9 @@ network_epsilon.cuda().eval();
 ############################################################################################################
 ############################################################################################################
 
-torch.save(network_epsilon, f'networks/network_GW_b_240_complex')
-torch.save(model, f'networks/model_GW_b_240_complex')
-netid = 'GW_b_240'
+torch.save(network_epsilon, f'networks/network_GW_bs_500_complex')
+torch.save(model, f'networks/model_GW_bs_500_complex')
+netid = 'GW_bs_500'
 
 ############################################################################################################
 ############################################################################################################
