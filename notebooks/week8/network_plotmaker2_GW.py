@@ -1,6 +1,5 @@
 ######## PRELIMS #########
 
-
 import torch
 torch.set_float32_matmul_precision('medium')
 import numpy as np
@@ -49,7 +48,7 @@ def dict_to_mps(x):
     if isinstance(x, dict):
         return {k: dict_to_mps(v) for k, v in x.items()}
     elif isinstance(x, torch.Tensor):
-        return x.to(device='mps')
+        return x.to(dtype=torch.float32,device='mps')
     elif isinstance(x, list):
         return [dict_to_mps(item) for item in x]
     else:
@@ -141,7 +140,7 @@ args = parser.parse_args()
 
 print("--- Running with the following configuration ---")
 print(f"Sigma: {args.sigma}, Nsims: {args.nsims}, Nbins: {args.nbins}, Bounds: {args.bounds}")
-print(f"Mode: {args.mode}, Deterministic: {args.det}, Background: {not args.nobkg}")
+print(f"Mode: {args.mode}, Deterministic: {args.det}, Background: {args.nobkg}")
 print("------------------------------------------------")
 
 glob_sigma = args.sigma
@@ -153,11 +152,19 @@ Nsims = args.nsims
 Nbins = args.nbins
 train_bounds = args.bounds
 
+# simulator = Simulator_Additive(Nbins=Nbins, sigma=glob_sigma, bounds=train_bounds, 
+#                                fraction=0.2, bkg=glob_bkg, dtype=torch.float32, 
+#                                mode=glob_mode, bump=glob_det)  
+
 simulator = Simulator_Additive(Nbins=Nbins, sigma=glob_sigma, bounds=train_bounds, 
                                fraction=0.2, bkg=glob_bkg, dtype=torch.float32, 
-                               mode=glob_mode, bump=glob_det)     
+                               mode='gw', bump=glob_det, frange=[20,240])
+
+simulator._init_gw()
+Nbins = len(simulator.grid_chopped)
+
 print(f"\n--- Simulator initialized with mode: {glob_mode}, det: {glob_det}, bkg: {glob_bkg} ---")
-samples = simulator.sample(Nsims=Nsims)
+# samples = simulator.sample(Nsims=Nsims)
 print(f"--- Sampled {Nsims} initial simulations ---")
 obs = simulator.sample(1)
 
@@ -168,7 +175,7 @@ d_marker = 'd' if glob_det == 'det' else 's'
 # netid = 'eMu-d_'+p_marker+b_marker+d_marker+str(train_bounds)
 # print(f'netid {netid}')
 
-netid = 'GW_q_1024'
+netid = 'GW_b_240'
 
 if not os.path.isdir('figs/'+netid):
     os.makedirs('figs/'+netid)
@@ -178,7 +185,6 @@ if not os.path.isdir('figs/'+netid):
 print("\n--- Loading Neural Networks ---")
 
 ### -- make network -- ###
-
 
 from models.online_norm import OnlineStandardizingLayer
 from models.resnet_1d import ResidualNet
@@ -525,6 +531,7 @@ quantiles_long = np.array([7.1508466e-04, 7.9613253e-03, 5.1986761e-02,
        4.5491748e+00, 5.4850187e+00], dtype=np.float32)
 
 pf.housestyle_rcparams()
+grid = simulator.grid_chopped
 fig, ax1 = pf.create_plot()
 
 plt.setp(ax1.get_xticklabels(), visible=False)
@@ -533,19 +540,20 @@ ax3 = fig.add_axes((1,-.3,0.2,0.3), sharey=ax2)
 plt.setp(ax3.get_xticklabels(), visible=False)
 plt.setp(ax3.get_yticklabels(), visible=False)
 
-ax1.plot(test['xi'][0], label=r'$x_i$', color="#d931f3")
-ax1.plot(test['x0'][0], label=r'$x_0$', color='#ff004f')
-ax1.plot(test['mu'][0], label=r'$\mu$', color='black')
+ax1.plot(grid,test['xi'][0], label=r'$x_i$', color="#d931f3")
+ax1.plot(grid,test['x0'][0], label=r'$x_0$', color='#ff004f')
+ax1.plot(grid,test['mu'][0], label=r'$\mu$', color='black')
+
 ax1.set_ylabel(r'$|\tilde{d}(f)|$')
 ax1.set_ylim([0,8])
 ax1.legend(loc='upper right')
 
 resd = test['x0'][0]-test['mu'][0]
-ax2.plot(resd, color='#ff004f')
+ax2.plot(grid, resd, color='#ff004f')
 ax2.set_xlabel(r'$f$')
 ax2.set_ylabel(r'res ($x_0$)')
 ax2.set_ylim([0,4.4])
-grid = torch.linspace(0, Nbins, Nbins)
+
 for i in range(1,6):
     ax1.fill_between(grid, quantiles_long[i]+test['mu'][0], quantiles_long[-i]+test['mu'][0],  color='#b0b0b0', alpha=0.1)
     ax2.fill_between(grid, quantiles_long[i], quantiles_long[-i],  color='#b0b0b0', alpha=0.1)
@@ -1043,7 +1051,8 @@ def analyse_obs_epsilon(obs):
     
     # Compute analytical epsilon and SNR^2 test statistic
     ni_temp = torch.eye(Nbins, dtype=torch.float32)
-    fit = best_fit(obs['xi'][0], simulator)
+    # fit = best_fit(obs['xi'][0], simulator)
+    fit = obs['mu'][0]
     delta_x = (obs['xi'] - fit).to(dtype=torch.float32)
     epsilon_analytical = get_epsilon(delta_x, ni_temp).squeeze(0)
     snr2_analytical = get_snr(delta_x, ni_temp).squeeze(0)**2
@@ -1075,8 +1084,6 @@ def analyse_obs_epsilon(obs):
     p_glob_bin = np.mean(min_pv_bin_H0_epsilon <= obs_min_pv_bin)
     p_glob_all = np.mean(min_pv_all_H0_epsilon <= obs_min_pv_all)
 
-    p_glob_bin, p_glob_all
-
     return epsilon_nn, epsilon_analytical, variance_nn, snr2_nn, snr2_analytical, p_nn, p_analytical, p_sum_nn, p_sum_analytical, p_glob_all
 
 
@@ -1085,9 +1092,11 @@ def analyse_obs_BCE(obs):
     target = obs['xi']
     
     ts_bin_obs = ts_sbi(obs, model=1)
-    ts_bin_analytical = (((obs['xi']- best_fit(obs['xi'][0], simulator))**2)/glob_sigma**2)[0]-1
+    # ts_bin_analytical = (((obs['xi']- best_fit(obs['xi'][0], simulator))**2)/glob_sigma**2)[0]-1
+    ts_bin_analytical = (((obs['xi']-  obs['mu'][0])**2)/glob_sigma**2)[0]-1
     ts_sum_obs = ts_bin_obs.sum()-ts_sum_H0_BCE_mean
-    ts_sum_obs_analytical = (((obs['xi']- best_fit(obs['xi'][0], simulator))**2)/glob_sigma**2).sum()-DOF
+    # ts_sum_obs_analytical = (((obs['xi']- best_fit(obs['xi'][0], simulator))**2)/glob_sigma**2).sum()-DOF
+    ts_sum_obs_analytical = (((obs['xi']- obs['mu'][0])**2)/glob_sigma**2).sum()-DOF
     _p_nn, _p_analytical = [], []
     for idx, ts_bin in enumerate(ts_bin_obs):
         ts_bin_i = ts_bin_H0_BCE[:, idx]
@@ -1130,7 +1139,8 @@ def plot_analysis_BCE(obs, ts_bin_obs, ts_bin_analytical, p_nn, p_analytical, p_
     xi = obs['xi'][0]
     ni = obs['ni'][0] 
     dist = obs['xi'][0] - obs['x0'][0]
-    grid = torch.linspace(0, Nbins, Nbins)
+    # grid = torch.linspace(0, Nbins, Nbins)
+    grid = simulator.grid_chopped
     ax1.plot(grid, obs['mu'][0], color='k', label=r"$\mu_{\mathrm{sim}}$")
     ax1.fill_between(grid, obs['mu'][0]-1, obs['mu'][0]+1,  color='#b0b0b0', alpha=0.1)
     ax1.fill_between(grid, obs['mu'][0]-2, obs['mu'][0]+2,  color='#b0b0b0', alpha=0.2)
@@ -1237,7 +1247,8 @@ def plot_together_new(
     xi = obs['xi'][0]
     ni = obs['ni'][0] 
     dist = obs['xi'][0] - obs['x0'][0]
-    grid = torch.linspace(0, Nbins, Nbins)
+    # grid = torch.linspace(0, Nbins, Nbins)
+    grid = simulator.grid_chopped
     ax1.plot(grid, obs['mu'][0], color='k', label=r"$\mu_{\mathrm{sim}}$", zorder=10)
 
     for i in range(1,6):
@@ -1297,8 +1308,8 @@ def plot_together_new(
     ax3.set_title(r"Localized $t_i$")
     # ax3.grid(True, axis='y', which='both')
     
-
-    distortion_locations = grid[ni != 0]
+    ni_numpy = ni.numpy()
+    distortion_locations = grid[ni_numpy != 0]
     for plot_ax in [ax1, ax2, ax3]:
         for loc in distortion_locations:
             plot_ax.axvline(loc, color='black', lw=1, zorder=-10)
@@ -1378,9 +1389,9 @@ frac = [0.01,0.1,0.05]
 
 print("--- Generating final comparison plots for different simulator settings ---")
 for i in range(3):
-    simulator1 = Simulator_Additive(Nbins=Nbins, sigma=glob_sigma, bkg=glob_bkg, 
-                                    bounds=bounds[i], fraction=frac[i], dtype=torch.float32, 
-                                    mode=glob_mode, bump=glob_det) 
+    simulator1 = Simulator_Additive(Nbins=Nbins, sigma=glob_sigma, bounds=bounds[i], 
+                               fraction=frac[i], bkg=glob_bkg, dtype=torch.float32, 
+                               mode='gw', bump=glob_det, frange=[20,240])
     obs = simulator1.sample(1) 
         
     ts_bin_obs, ts_bin_analytical, p_nn_BCE, p_analytical_BCE, p_sum_nn_BCE, p_sum_analytical_BCE, p_glob_all_BCE = analyse_obs_BCE(obs)
@@ -1400,7 +1411,10 @@ for i in range(3):
 print("\n--- Starting Part Two: Grid analysis ---")
 
 ###### SET UP GRID ######
-positions = torch.arange(0, Nbins, 1).to(dtype=simulator.dtype)
+obs = simulator.sample(1) 
+
+chopgrid = torch.from_numpy(np.array(simulator.grid_chopped))
+positions = chopgrid.to(dtype=simulator.dtype)
 amplitudes = torch.linspace(-3, 10, 80).to(dtype=simulator.dtype)
 
 position_grid, amplitude_grid = torch.meshgrid(positions,amplitudes)
