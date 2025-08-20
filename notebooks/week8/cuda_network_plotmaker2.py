@@ -1,6 +1,10 @@
 ######## PRELIMS #########
 
+import os
+os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
+
 import torch
+torch.cuda.empty_cache()
 torch.set_float32_matmul_precision('medium')
 import numpy as np
 import scipy
