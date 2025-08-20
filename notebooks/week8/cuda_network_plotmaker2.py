@@ -409,7 +409,7 @@ model_BCE.cuda().double().eval()
 ######## MC ON DATA #########
 
 print("\n--- Starting Monte Carlo on SNR data ---")
-N_mc = 5e5
+N_mc = 1e5
 
 obs = simulator.sample(1)
 
@@ -585,8 +585,6 @@ print("\n--- Running MCMC with stats ---")
   
 
 ### - SNR - ###
-
-N_mc = 5e5
 
 ni = torch.eye(Nbins, dtype=obs['xi'].dtype)
 variance = 1 / get_sigma_epsilon_inv2(ni)
