@@ -44,13 +44,13 @@ def t_to_pvalue_empirical(ts_obs, ts0_ref):
     ts0_ref = np.asarray(ts0_ref)
     return (np.sum(ts0_ref >= ts_obs) + 1) / (len(ts0_ref) + 1)
 
-def dict_to_mps(x):
+def dict_to_cuda(x):
     if isinstance(x, dict):
-        return {k: dict_to_mps(v) for k, v in x.items()}
+        return {k: dict_to_cuda(v) for k, v in x.items()}
     elif isinstance(x, torch.Tensor):
-        return x.to(dtype=torch.float32,device='mps')
+        return x.cuda().double()
     elif isinstance(x, list):
-        return [dict_to_mps(item) for item in x]
+        return [dict_to_cuda(item) for item in x]
     else:
         return x
 
@@ -66,7 +66,7 @@ def dict_to_cpu(x: dict) -> dict:
 
 def ts_sbi(x: dict, model: int =0):
     # x = dict_to_double(x)
-    x = dict_to_mps(x)
+    x = dict_to_cuda(x)
     
     # Test statistic for sample 0 or 1
     if 'x' not in x.keys():
@@ -99,7 +99,7 @@ def chop_middle(array, remove=50, linemode=True):
         
 def get_snr2(input:dict):
     target = input['x']
-    snr2_nn = network_epsilon.snr(target.to(device='mps', dtype=torch.float32)).detach().cpu().numpy()**2 
+    snr2_nn = network_epsilon.snr(target.cuda().double()).detach().cpu().numpy()**2 
     return snr2_nn
 
 def local_do_ticks(list_of_axes, dir = 'in'):
@@ -362,7 +362,7 @@ for key in sd:
     
 network_epsilon.load_state_dict(new_state_dict)
 # network_epsilon.cuda().double().eval()
-network_epsilon.to(dtype=torch.float32,device='mps').eval()
+network_epsilon.cuda().double().eval()
 
 model = CustomLossModule_withBounds(network_epsilon, learning_rate=3e-3)
 checkpoint = torch.load(f'networks/model_{netid}_complex', 
@@ -374,7 +374,7 @@ for key in sd:
     
 model.load_state_dict(sd)
 # network_epsilon.cuda().double().eval()
-model.to(dtype=torch.float32,device='mps').eval()
+model.cuda().double().eval()
 
 ## -- bce -- ##
 
@@ -388,7 +388,7 @@ for key in sd:
     
 network_BCE.load_state_dict(new_state_dict)
 # network_BCE.cuda().double().eval()
-network_BCE.to(dtype=torch.float32,device='mps').eval()
+network_BCE.cuda().double().eval()
 
 model_BCE = BCELossModule(network_BCE, learning_rate=3e-3)
 checkpoint = torch.load(f'networks/model_BCE_{netid}_complex', weights_only=False,map_location=torch.device('cpu'))
@@ -400,7 +400,7 @@ for key in sd:
     
 model_BCE.load_state_dict(sd)
 # network_BCE.cuda().double().eval()
-model_BCE.to(dtype=torch.float32,device='mps').eval()
+model_BCE.cuda().double().eval()
 
 ######## MC ON DATA #########
 
@@ -594,7 +594,7 @@ ts_bin_H0_epsilon = []
 for _ in range(N_batch):
     mc_samples = simulator.sample(batch_size)
     # ts_batch =  (network_epsilon.snr(mc_samples['x0'].cuda())**2).detach().cpu().numpy()
-    ts_batch =  (network_epsilon.snr(mc_samples['x0'].to(device='mps', dtype=torch.float32))**2).detach().cpu().numpy()
+    ts_batch =  (network_epsilon.snr(mc_samples['x0'].cuda().double())**2).detach().cpu().numpy()
     ts_bin_H0_epsilon.append(ts_batch)
     
 ts_bin_H0_epsilon = np.concatenate(ts_bin_H0_epsilon)
@@ -639,7 +639,7 @@ for _ in range(N_batch):
     mc_samples = simulator.sample(batch_size)
     data_bin_H0.append(mc_samples['x0'])
     eps_bin_H0.append(mc_samples['epsilon'])
-    network_pvalue.append(network_epsilon.snr(mc_samples['xi'].to(device='mps', dtype=torch.float32)).detach().cpu().numpy()**2)
+    network_pvalue.append(network_epsilon.snr(mc_samples['xi'].cuda().double()).detach().cpu().numpy()**2)
     
 data_bin_H0 = np.concatenate(data_bin_H0)
 eps_bin_H0 = np.concatenate(eps_bin_H0)
@@ -671,9 +671,9 @@ obs = simulator.sample(1)
 delta_x = obs['xi']
 
 ni = torch.eye(Nbins, dtype=obs['xi'].dtype)
-epsilon_nn_obs = network_epsilon.epsilon(delta_x.to(dtype=torch.float32,device='mps')).detach().cpu().numpy().squeeze(0)
+epsilon_nn_obs = network_epsilon.epsilon(delta_x.cuda().double()).detach().cpu().numpy().squeeze(0)
 variance_nn_obs = network_epsilon.logvariance.exp().detach().cpu().numpy()
-snr_nn_obs = network_epsilon.snr(delta_x.to(dtype=torch.float32,device='mps')).detach().cpu().numpy().squeeze(0)
+snr_nn_obs = network_epsilon.snr(delta_x.cuda().double()).detach().cpu().numpy().squeeze(0)
 # epsilon_nn_obs = network_epsilon.epsilon(delta_x.cuda()).detach().cpu().numpy().squeeze(0)
 # variance_nn_obs = network_epsilon.logvariance.exp().detach().cpu().numpy()
 # snr_nn_obs = network_epsilon.snr(delta_x.cuda()).detach().cpu().numpy().squeeze(0)
@@ -681,9 +681,9 @@ epsilon_obs = get_epsilon(delta_x, ni).squeeze(0)
 variance_obs = 1 / get_sigma_epsilon_inv2(ni)
 snr_obs = get_snr(delta_x, ni).squeeze(0)
 
-epsilon_nn_obs = network_epsilon.epsilon(delta_x.to(dtype=torch.float32,device='mps')).detach().cpu().numpy().squeeze(0)
+epsilon_nn_obs = network_epsilon.epsilon(delta_x.cuda().double()).detach().cpu().numpy().squeeze(0)
 variance_nn_obs = network_epsilon.logvariance.exp().detach().cpu().numpy()
-snr_nn_obs = network_epsilon.snr(delta_x.to(dtype=torch.float32,device='mps')).detach().cpu().numpy().squeeze(0)
+snr_nn_obs = network_epsilon.snr(delta_x.cuda().double()).detach().cpu().numpy().squeeze(0)
 
 # For each simultion of the n ones, compute analytical quantities
 # fig, axs = plt.subplots(1, 2, figsize=(10, 4))
@@ -1461,10 +1461,10 @@ for q in range(2):
             # print(a)
             axs[2*q].plot(chop_middle(positions)[j], chop_middle(obs['mu'][0]+quantiles[-i])[j], color='white', alpha=alp)
 
-    x = len(obs['mu'][0])/2
+    x = Nbins/2
     axs[2*q].text(x,obs['mu'][0][int(x)], r'$\mu$', color='white', size=20)
     sigs = [r'$+3\sigma$',r'$+2\sigma$',r'$+\sigma$',r'$\bar{x}_0$']
-    x2 = len(obs['mu'][0])/2
+    x2 = Nbins/2
     ff = torch.Tensor([0,0,0,-1])
     for i in range(1,5):
         axs[2*q].text(x2,(obs['mu'][0]+quantiles[-i])[int(x2)], sigs[i-1], color='white', size=12, ha='center')  
@@ -1520,10 +1520,10 @@ for q in range(2):
     axs[2*q+1].set_ylim([-6.5,0])
 
     for j in range(2):
-        axs[2*q].plot(chop_middle(positions)[j], chop_middle(obs['mu'][0])[j], color=labcolour, linewidth=1)
+        axs[2*q].plot(chop_middle(positions)[j], chop_middle(obs['mu'][0])[j], color=labcolour, linewidth=3)
         for i in range(5):
             alp = .5+(i/8)
-            axs[2*q].plot(chop_middle(positions)[j], chop_middle(obs['mu'][0]+quantiles[-i])[j], color=labcolour, alpha=alp, linewidth=1)
+            axs[2*q].plot(chop_middle(positions)[j], chop_middle(obs['mu'][0]+quantiles[-i])[j], color=labcolour, alpha=alp)
 
     x = Nbins/2
     axs[2*q].text(x,obs['mu'][0][int(x)], r'$\mu$', color=labcolour, size=20)
