@@ -1,47 +1,73 @@
-import numpy as np
+import os
+os.environ['JAX_PLATFORMS'] = 'cpu'
+import matplotlib.pyplot as plt
+import jax.numpy as jnp
+import jax
+from gwpy.timeseries import TimeSeries
+from gwosc.datasets import event_gps
 
-# Based on your description, ts_bin_H0_epsilon is a 2D array where each row
-# is a sample from the null hypothesis and each column is a bin.
-# For demonstration, we'll create a placeholder for it.
-nbins = 10  # Assuming 10 bins for the example
-ts_bin_H0_epsilon = np.random.randn(199936, nbins)
+print("--- Step 1: Fetching and Preparing Real Detector Data ---")
+# -- 1. Fetch the PSD for the LIGO Hanford detector around GW150914
+# The psd() method of a TimeSeries will calculate the PSD.
+# We can get the data from GWOSC using fetch_open_data.
+event_time = event_gps('GW150914')
+detector = 'H1'
+start = event_time - 16
+end = event_time + 16
+print(f"Fetching {end - start} seconds of data for '{detector}' around event GW150914 (GPS time: {event_time})...")
 
-def pvalue_array_eps(dat):
-    """
-    Calculates p-values for a single 1D array of test statistics against a
-    2D reference distribution.
+# fetch the real data
+data = TimeSeries.fetch_open_data(detector, start, end, sample_rate=4096)
+print("Data fetched successfully.")
 
-    This function is analogous to your `pvalue_grid_eps` but is specifically
-    for a single 1D `dat` array of shape (nbins,).
+# calculate the PSD
+print("Calculating Power Spectral Density (PSD) from the real data...")
+psd = data.psd(fftlength=4)
+print("PSD calculated.")
 
-    Args:
-        dat: A 1D numpy array of observed test statistics, shape (nbins,).
+print("\n--- Step 2: Generating White Noise ---")
+# -- 2. Generate white noise with the same properties
+# We'll create 32 seconds of noise at the same sample rate (4096 Hz)
+duration = 32
+sample_rate = 4096
+print(f"Generating {duration} seconds of Gaussian white noise using JAX...")
+key = jax.random.PRNGKey(0)
+noise_array = jnp.random.normal(key, shape=(int(duration * sample_rate),))
+noise = TimeSeries(noise_array, sample_rate=sample_rate)
+print("White noise generated.")
 
-    Returns:
-        A 1D numpy array of p-values, one for each bin, shape (nbins,).
-    """
-    # Center the reference distribution by subtracting the mean of each bin
-    eps_t_mean = np.mean(ts_bin_H0_epsilon, axis=0)
-    eps_t_ref = ts_bin_H0_epsilon - eps_t_mean
+print("\n--- Step 3: Coloring the Noise ---")
+# -- 3. Color the noise using the fetched PSD
+# The inject() method handles the frequency-domain coloring
+print("Coloring the white noise with the real data PSD...")
+colored_noise = noise.inject(psd)
+print("Noise colored successfully.")
 
-    # Compare the centered reference distribution (N_samples, nbins) with
-    # the observed data `dat` (nbins,). `dat` is broadcasted across all samples.
-    # The result is a boolean array of shape (N_samples, nbins).
-    # We sum along axis=0 to count how many samples in `eps_t_ref` were
-    # greater than or equal to `dat` for each bin.
-    counts = np.sum(eps_t_ref >= dat, axis=0)
+print("\n--- Step 4: Plotting Results ---")
+# -- 4. (Optional) Plot the results to verify
+print("Generating plots to compare the generated noise with the real data...")
+fig, axes = plt.subplots(2, 1, figsize=(8, 6))
 
-    # Calculate the p-value for each bin
-    return (counts + 1) / (len(eps_t_ref) + 1)
+# Plot the time-domain colored noise
+ax = axes[0]
+ax.set_title(f"Generated '{detector}' Noise Strain")
+ax.plot(colored_noise.times, colored_noise, linewidth=0.5)
+ax.set_ylabel("Strain")
+ax.set_xlabel("Time (s)")
 
-# --- Example Usage ---
-if __name__ == '__main__':
-    # Example 1: An array of observed test statistics for each bin.
-    observed_statistics = np.array([0.1, -0.5, 1.2, 2.5, -1.8, 0.3, 0.9, -0.1, 3.1, 0.0])
-    p_values = pvalue_array_eps(observed_statistics)
+# Plot the amplitude spectral density (ASD) to see the color
+ax = axes[1]
+ax.set_title("Amplitude Spectral Density (ASD)")
+ax.plot(psd.frequencies, psd**0.5, label='Real Data ASD')
+ax.plot(colored_noise.asd(fftlength=4).frequencies, colored_noise.asd(fftlength=4), label='Generated Noise ASD')
+ax.set_yscale('log')
+ax.set_xscale('log')
+ax.set_ylabel(r'Strain [1/$\sqrt{\mathrm{Hz}}$]')
+ax.set_xlabel("Frequency (Hz)")
+ax.legend()
+ax.grid(True, which='both')
+ax.set_xlim(20, 2048)
 
-    print("--- Example ---")
-    print(f"Number of bins: {len(observed_statistics)}")
-    print(f"Observed statistics: {np.round(observed_statistics, 2)}")
-    print(f"Resulting p-values per bin: {np.round(p_values, 4)}")
-    print("\nNote: A larger statistic (e.g., 3.1) results in a smaller p-value, as expected.")
+plt.tight_layout()
+print("Displaying plots. Close the plot window to exit the script.")
+plt.show()
