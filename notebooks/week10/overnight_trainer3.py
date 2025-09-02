@@ -120,7 +120,7 @@ class Network_epsilon(torch.nn.Module):
 
 batch_size = 128
 
-dm = OnTheFlyDataModule(simulator, Nsims_per_epoch=400*batch_size, batch_size=batch_size, num_workers=31)
+dm = OnTheFlyDataModule(simulator, Nsims_per_epoch=400*batch_size, batch_size=batch_size, num_workers=0)
 
 network_epsilon = Network_epsilon(nbins=simulator.Nbins)
 model = NewLossModule_withBounds(network_epsilon, learning_rate=3e-3)
