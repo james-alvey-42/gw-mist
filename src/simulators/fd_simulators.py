@@ -108,6 +108,9 @@ class Base_GW1501914:
         x = np.array(x)
         prefactor = np.expand_dims(np.sqrt(np.array(self.psd.data)), axis=0)
         return np.abs(x/prefactor)
+    
+    def frequency_to_time_domain(self, x):
+        return jnp.fft.irfft(jnp.array(x), axis=1) / self.delta_t
          
     
     def _load_posterior_samples(self):
