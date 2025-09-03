@@ -36,7 +36,7 @@ defaults = {
     "posterior_samples_path": "GW150814_posterior_samples.npz",
 }
 
-class Base_GW1501914:
+class Base_GW150914:
     def __init__(self, settings:dict={}, stoch_mu=True):
         self.settings = settings
         self.stoch = stoch_mu
@@ -58,7 +58,7 @@ class Base_GW1501914:
         self.pre_trigger_time = self.settings.get("pre_trigger_time", 2.0)
         self.post_trigger_time = self.settings.get("post_trigger_time", 2.0)
         self.data_window = self.settings.get("data_window", 1000)
-        self.psd_window = self.settings.get("psd_window", 2)
+        self.psd_window = self.settings.get("psd_window", 10)
         # self.psd_pad = self.settings.get("psd_pad", 16.0)
         self.ifo = self.settings.get("ifo", "H1")
         # self.tukey_alpha = self.settings.get("tukey_alpha", 0.2) #### CHANGE THIS ####
@@ -81,7 +81,7 @@ class Base_GW1501914:
         self.duration = self.gwosc_data.duration.value
         self.npts = len(self.gwosc_data)
         self.delta_t = self.gwosc_data.dt.value
-        self.epoch = self.duration - self.post_trigger_time
+        # self.epoch = self.duration - self.post_trigger_time
         self.gmst = (
             Time(self.trigger_time, format="gps")
             .sidereal_time("apparent", "greenwich")
@@ -98,20 +98,76 @@ class Base_GW1501914:
         window = tukey(np.shape(x)[1], alpha=self.tukey_alpha) # shape [nbins]
         return x*np.expand_dims(window,axis=0) # shape [nsamples, nbins]
     
-    def whiten(self, x):
+    # def _bandpass(self, x, range=None, f=None):
+    #     freqs = self.frequencies if f==None else np.array(f)
+    #     if range==None:
+    #         return x
+    #     else:
+    #         mask = (freqs<range[0])&(freqs>range[1])
+    #         x[...,mask] = 0
+    #         return x
+
+    # def setup_filter(self):
+    #     bandpass = jnp.logical_and(
+    #         self.frequencies > self.f_min, self.frequencies < self.f_max
+    #     )
+    #     notches = jnp.ones_like(self.frequencies)
+    #     for notch in self.notches:
+    #         notches = jnp.logical_and(
+    #             notches,
+    #             jnp.logical_or(
+    #                 self.frequencies < notch - self.notch_width,
+    #                 self.frequencies > notch + self.notch_width,
+    #             ),
+    #         )
+    #     self.filter = jnp.logical_and(bandpass, notches)
+
+    def _bandpass(self,x, range=None, f=None):
+        freqs = self.frequencies if f==None else np.array(f)
+        if range == None:
+            return x
+        else:
+            x = jnp.array(x)
+            f_min = range[0]
+            f_max = range[1]
+            bandpass = jnp.logical_and(
+                freqs > f_min, freqs < f_max
+            )
+            notches = jnp.ones_like(freqs)
+            for notch in self.notches:
+                notches = jnp.logical_and(
+                    notches,
+                    jnp.logical_or(
+                        freqs < notch - self.notch_width,
+                        freqs > notch + self.notch_width,
+                    ),
+                )
+            filter = jnp.logical_and(bandpass, notches)
+            reshape_dims = (1,) * (x.ndim - 1) + (-1,)
+            return x*jnp.reshape(filter,reshape_dims)
+
+    
+    def whiten(self, x, rl=True):
         # x is supplied in form [nbins (complex)]
         x = np.array(x)
-        return np.abs(x/np.sqrt(self.psd.data))
+        if rl:
+            return np.abs(x/np.sqrt(self.psd.data))
+        else:
+            return x/np.sqrt(self.psd.data)
     
-    def whiten_batch(self,x):
+    def whiten_batch(self,x, rl=True):
         # x is supplied in form [nsamples,nbins]
         x = np.array(x)
         prefactor = np.expand_dims(np.sqrt(np.array(self.psd.data)), axis=0)
-        return np.abs(x/prefactor)
+        if rl:
+            return np.abs(x/prefactor)
+        else:
+            return x/prefactor
     
-    def frequency_to_time_domain(self, x):
-        return jnp.fft.irfft(jnp.array(x), axis=1) / self.delta_t
-         
+    def frequency_to_time_domain(self, x, bp_range=None, freqgrid=None):
+        x = np.array(x)
+        x = self._bandpass(x, range=bp_range, f=freqgrid) ### RETURNS X if bp_range == None 
+        return jnp.fft.irfft(jnp.array(x), axis=-1) / self.delta_t
     
     def _load_posterior_samples(self):
         # print(f"Loading posterior samples from {self.posterior_samples_path}")
@@ -140,9 +196,12 @@ class Base_GW1501914:
         self.posterior_array[:, 1] = (self.posterior_array[:, 1]) / (
             1.0 + self.posterior_array[:, 1]
         ) ** 2  # q -> eta = q / (1 + q)^2
+        # self.posterior_array[:, 5] = (
+        #     self.epoch + self.posterior_array[:, 5]
+        # )  # t_c -> t_c + epoch
         self.posterior_array[:, 5] = (
-            self.epoch + self.posterior_array[:, 5]
-        )  # t_c -> t_c + epoch
+            self.psd_window / 2.0 + self.posterior_array[:, 5]
+        ) # t_c -> t_c + epoch
 
     def _setup_waveform(self):
         if self.approximant == "IMRPhenomD":
@@ -164,21 +223,21 @@ class Base_GW1501914:
         indices = start_indices[:, None] + offsets
         return alldata_raw[indices]
     
-    def get_noise_fd(self, nsamples):
+    def get_noise_fd(self, nsamples, real=True):
         noise_td = self._get_noise_td(nsamples=nsamples)
         noise_td_windowed = self._tukey(noise_td)
         noise_fd_complex = jnp.fft.rfft(noise_td_windowed)*self.gwosc_data.dt
-        return self.whiten_batch(noise_fd_complex)
+        return self.whiten_batch(noise_fd_complex, rl=real)
     
     def get_GW150914_td(self):
-        return TimeSeries.fetch_open_data(self.ifo, self.event_time-self.psd_window/2, 
-                                                     self.event_time+self.psd_window/2, sample_rate=4096)
+        return TimeSeries.fetch_open_data(self.ifo, self.trigger_time-self.psd_window/2, 
+                                                     self.trigger_time+self.psd_window/2, sample_rate=4096)
         
-    def get_GW150914_fd(self):
+    def get_GW150914_fd(self, real=True):
         raw = self.get_GW150914_td().data
         raw_windowed = np.squeeze(self._tukey(np.expand_dims(raw,axis=0)), axis=0)
         raw_fd = np.fft.rfft(raw_windowed)*self.gwosc_data.dt
-        return self.whiten(raw_fd)
+        return self.whiten(raw_fd, rl=real)
         # return np.abs(raw_fd/np.sqrt(self.psd.data))
     
     ### WAVEFORM GENERATORS ###
@@ -199,7 +258,9 @@ class Base_GW1501914:
             params_batch = self.posterior_array[choices]
             return torch.from_numpy(params_batch)
         
-    def _fd_waveform_batched(self, params_batch_tensor):
+    def _fd_waveform_batched_unwhitened(self, params_batch_tensor, grid=None):
+        freqs = self.frequencies if grid==None else np.array(grid)
+
         params_batch = params_batch_tensor.numpy()
         theta_ripple_batch = params_batch[:, :8]
         ra_batch, dec_batch, psi_batch = params_batch[:, 8], params_batch[:, 9], params_batch[:, 10]
@@ -210,17 +271,20 @@ class Base_GW1501914:
         )
         hp_batch, hc_batch = batched_waveform(theta_ripple_batch)
         wf_fd_batch = batched_detector_response(
-            self.frequencies,
+            freqs,
             {"p": hp_batch, "c": hc_batch},
             {"ra": ra_batch, "dec": dec_batch, "psi": psi_batch, "gmst": self.gmst},
         )
-        return self.whiten_batch(wf_fd_batch)
+        # Instead of ``x[idx] = y``, use ``x = x.at[idx].set(y)
+        wf_fd_batch = wf_fd_batch.at[np.isnan(wf_fd_batch)].set(0)
+        return wf_fd_batch
+    
+    def _fd_waveform_batched(self, pbt, real=True):
+        wf_fd_batch = self._fd_waveform_batched_unwhitened(pbt)
+        return self.whiten_batch(wf_fd_batch, rl=real)
     
     
-
-
-
-class GW_Additive_F(Base_GW1501914):
+class GW_Additive_F(Base_GW150914):
     def __init__(self, settings: dict = {}, stoch_mu=True, device='cpu', dtype=torch.float64, 
                  bkg=True,bounds=5,fraction=None,sample_fraction=None):
         
