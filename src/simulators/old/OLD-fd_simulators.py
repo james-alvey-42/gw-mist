@@ -36,23 +36,16 @@ defaults = {
     "posterior_samples_path": "GW150814_posterior_samples.npz",
 }
 
-class Base_GW1501914:
+class Base_GW150914:
     def __init__(self, settings:dict={}, stoch_mu=True):
-        self.on = False
         self.settings = settings
         self.stoch = stoch_mu
-        
-        self._init_all()
+        self._unpack_settings()
+        self._initialise_gw()
+        self._load_posterior_samples()
+        self._setup_waveform()
 
     ### METHODS ###
-
-    def _init_all(self):
-        if not self.on:
-            self.on = True 
-            self._unpack_settings()
-            self._initialise_gw()
-            self._load_posterior_samples()
-            self._setup_waveform()
     
     def _unpack_settings(self):
         self.approximant = self.settings.get("approximant", "IMRPhenomD")
@@ -65,8 +58,10 @@ class Base_GW1501914:
         self.pre_trigger_time = self.settings.get("pre_trigger_time", 2.0)
         self.post_trigger_time = self.settings.get("post_trigger_time", 2.0)
         self.data_window = self.settings.get("data_window", 1000)
-        self.psd_window = self.settings.get("psd_window", 2)
+        self.psd_window = self.settings.get("psd_window", 10)
+        # self.psd_pad = self.settings.get("psd_pad", 16.0)
         self.ifo = self.settings.get("ifo", "H1")
+        # self.tukey_alpha = self.settings.get("tukey_alpha", 0.2) #### CHANGE THIS ####
         self.posterior_samples_path = self.settings.get(
             "posterior_samples_path", "../../mist-base/GW/GW150814_posterior_samples.npz"
         )
@@ -86,7 +81,7 @@ class Base_GW1501914:
         self.duration = self.gwosc_data.duration.value
         self.npts = len(self.gwosc_data)
         self.delta_t = self.gwosc_data.dt.value
-        self.epoch = self.duration - self.post_trigger_time
+        # self.epoch = self.duration - self.post_trigger_time
         self.gmst = (
             Time(self.trigger_time, format="gps")
             .sidereal_time("apparent", "greenwich")
@@ -103,17 +98,76 @@ class Base_GW1501914:
         window = tukey(np.shape(x)[1], alpha=self.tukey_alpha) # shape [nbins]
         return x*np.expand_dims(window,axis=0) # shape [nsamples, nbins]
     
-    def whiten(self, x):
+    # def _bandpass(self, x, range=None, f=None):
+    #     freqs = self.frequencies if f==None else np.array(f)
+    #     if range==None:
+    #         return x
+    #     else:
+    #         mask = (freqs<range[0])&(freqs>range[1])
+    #         x[...,mask] = 0
+    #         return x
+
+    # def setup_filter(self):
+    #     bandpass = jnp.logical_and(
+    #         self.frequencies > self.f_min, self.frequencies < self.f_max
+    #     )
+    #     notches = jnp.ones_like(self.frequencies)
+    #     for notch in self.notches:
+    #         notches = jnp.logical_and(
+    #             notches,
+    #             jnp.logical_or(
+    #                 self.frequencies < notch - self.notch_width,
+    #                 self.frequencies > notch + self.notch_width,
+    #             ),
+    #         )
+    #     self.filter = jnp.logical_and(bandpass, notches)
+
+    def _bandpass(self,x, range=None, f=None):
+        freqs = self.frequencies if f==None else np.array(f)
+        if range == None:
+            return x
+        else:
+            x = jnp.array(x)
+            f_min = range[0]
+            f_max = range[1]
+            bandpass = jnp.logical_and(
+                freqs > f_min, freqs < f_max
+            )
+            notches = jnp.ones_like(freqs)
+            for notch in self.notches:
+                notches = jnp.logical_and(
+                    notches,
+                    jnp.logical_or(
+                        freqs < notch - self.notch_width,
+                        freqs > notch + self.notch_width,
+                    ),
+                )
+            filter = jnp.logical_and(bandpass, notches)
+            reshape_dims = (1,) * (x.ndim - 1) + (-1,)
+            return x*jnp.reshape(filter,reshape_dims)
+
+    
+    def whiten(self, x, rl=True):
         # x is supplied in form [nbins (complex)]
         x = np.array(x)
-        return x/np.sqrt(self.psd.data)
+        if rl:
+            return np.abs(x/np.sqrt(self.psd.data))
+        else:
+            return x/np.sqrt(self.psd.data)
     
-    def whiten_batch(self,x):
+    def whiten_batch(self,x, rl=True):
         # x is supplied in form [nsamples,nbins]
         x = np.array(x)
         prefactor = np.expand_dims(np.sqrt(np.array(self.psd.data)), axis=0)
-        return x/prefactor
-         
+        if rl:
+            return np.abs(x/prefactor)
+        else:
+            return x/prefactor
+    
+    def frequency_to_time_domain(self, x, bp_range=None, freqgrid=None):
+        x = np.array(x)
+        x = self._bandpass(x, range=bp_range, f=freqgrid) ### RETURNS X if bp_range == None 
+        return jnp.fft.irfft(jnp.array(x), axis=-1) / self.delta_t
     
     def _load_posterior_samples(self):
         # print(f"Loading posterior samples from {self.posterior_samples_path}")
@@ -142,9 +196,12 @@ class Base_GW1501914:
         self.posterior_array[:, 1] = (self.posterior_array[:, 1]) / (
             1.0 + self.posterior_array[:, 1]
         ) ** 2  # q -> eta = q / (1 + q)^2
+        # self.posterior_array[:, 5] = (
+        #     self.epoch + self.posterior_array[:, 5]
+        # )  # t_c -> t_c + epoch
         self.posterior_array[:, 5] = (
-            self.epoch + self.posterior_array[:, 5]
-        )  # t_c -> t_c + epoch
+            self.psd_window / 2.0 + self.posterior_array[:, 5]
+        ) # t_c -> t_c + epoch
 
     def _setup_waveform(self):
         if self.approximant == "IMRPhenomD":
@@ -166,22 +223,23 @@ class Base_GW1501914:
         indices = start_indices[:, None] + offsets
         return alldata_raw[indices]
     
-    def get_noise_fd(self, nsamples):
+    def get_noise_fd(self, nsamples, real=True):
         noise_td = self._get_noise_td(nsamples=nsamples)
         noise_td_windowed = self._tukey(noise_td)
         noise_fd_complex = jnp.fft.rfft(noise_td_windowed)*self.gwosc_data.dt
-        return self.whiten_batch(noise_fd_complex)
+        return self.whiten_batch(noise_fd_complex, rl=real)
     
     def get_GW150914_td(self):
-        return TimeSeries.fetch_open_data(self.ifo, self.event_time-self.psd_window/2, 
-                                                     self.event_time+self.psd_window/2, sample_rate=4096)
+        return TimeSeries.fetch_open_data(self.ifo, self.trigger_time-self.psd_window/2, 
+                                                     self.trigger_time+self.psd_window/2, sample_rate=4096)
         
-    def get_GW150914_fd(self):
+    def get_GW150914_fd(self, real=True):
         raw = self.get_GW150914_td().data
         raw_windowed = np.squeeze(self._tukey(np.expand_dims(raw,axis=0)), axis=0)
         raw_fd = np.fft.rfft(raw_windowed)*self.gwosc_data.dt
-        return self.whiten(raw_fd)
-
+        return self.whiten(raw_fd, rl=real)
+        # return np.abs(raw_fd/np.sqrt(self.psd.data))
+    
     ### WAVEFORM GENERATORS ###
 
     @partial(jax.jit, static_argnums=(0,))
@@ -200,7 +258,9 @@ class Base_GW1501914:
             params_batch = self.posterior_array[choices]
             return torch.from_numpy(params_batch)
         
-    def _fd_waveform_batched(self, params_batch_tensor):
+    def _fd_waveform_batched_unwhitened(self, params_batch_tensor, grid=None):
+        freqs = self.frequencies if grid==None else np.array(grid)
+
         params_batch = params_batch_tensor.numpy()
         theta_ripple_batch = params_batch[:, :8]
         ra_batch, dec_batch, psi_batch = params_batch[:, 8], params_batch[:, 9], params_batch[:, 10]
@@ -211,15 +271,20 @@ class Base_GW1501914:
         )
         hp_batch, hc_batch = batched_waveform(theta_ripple_batch)
         wf_fd_batch = batched_detector_response(
-            self.frequencies,
+            freqs,
             {"p": hp_batch, "c": hc_batch},
             {"ra": ra_batch, "dec": dec_batch, "psi": psi_batch, "gmst": self.gmst},
         )
-        return self.whiten_batch(wf_fd_batch)
+        # Instead of ``x[idx] = y``, use ``x = x.at[idx].set(y)
+        wf_fd_batch = wf_fd_batch.at[np.isnan(wf_fd_batch)].set(0)
+        return wf_fd_batch
+    
+    def _fd_waveform_batched(self, pbt, real=True):
+        wf_fd_batch = self._fd_waveform_batched_unwhitened(pbt)
+        return self.whiten_batch(wf_fd_batch, rl=real)
     
     
-
-class GW_Additive_F(Base_GW1501914):
+class GW_Additive_F(Base_GW150914):
     def __init__(self, settings: dict = {}, stoch_mu=True, device='cpu', dtype=torch.float64, 
                  bkg=True,bounds=5,fraction=None,sample_fraction=None):
         
@@ -235,22 +300,10 @@ class GW_Additive_F(Base_GW1501914):
         self.Nbins = len(self.frequencies)
         self.grid = self.frequencies
 
-        self.dtype_map = {
-            torch.float64:torch.complex128,
-            torch.float32:torch.complex64,
-            torch.float16:torch.complex32
-        }
-        self.complex_dtype = self.dtype_map.get(self.dtype,torch.complex128)
-
     def to_type(self, tensr:torch.Tensor) -> torch.Tensor:
         return tensr.to(dtype=self.dtype, device=self.device)
-    
-    def to_type_complex(self, tensr:torch.Tensor) -> torch.Tensor:
-        complex_dtype = self.dtype_map.get(self.dtype,torch.complex128)
-        return tensr.to(dtype=complex_dtype, device=self.device)
 
     def get_theta(self, Nsims: int) -> torch.Tensor:
-        self._init_all()
         if self.bkg:
             output = self._fd_theta_batched(Nsims)
             return self.to_type(output)
@@ -259,23 +312,18 @@ class GW_Additive_F(Base_GW1501914):
             return self.to_type(output)
     
     def get_mu(self, theta: torch.Tensor) -> torch.Tensor:
-        self._init_all()
         mu = torch.tensor(self._fd_waveform_batched(theta))
-        return self.to_type_complex(mu)
+        return self.to_type(mu)
     
-    def get_x_H0(self, mu:torch.Tensor, mag=True) -> torch.Tensor:
-        self._init_all()
+    def get_x_H0(self, mu:torch.Tensor) -> torch.Tensor:
         x_shape = mu.shape
         noise = torch.tensor(self.get_noise_fd(x_shape[0]))
         return mu+noise
     
     def get_ni(self, x: torch.Tensor) -> torch.Tensor:
-        self._init_all()
-        # xreal = torch.abs(torch.tensor(x)).squeeze(0)
-        xreal = torch.abs(x)
         if self.fraction is None:
             """Standard basis vectors"""
-            batch_size, N_bins = xreal.shape
+            batch_size, N_bins = x.shape
             ni = torch.zeros(batch_size, N_bins, device=self.device, dtype=self.dtype)
             indices = torch.randint(0, N_bins, (batch_size,), device=self.device)
             ni[torch.arange(batch_size), indices] = 1
@@ -286,39 +334,32 @@ class GW_Additive_F(Base_GW1501914):
             else:   
                 fr = self.fraction
             prob = fr*self.Nbins/100
-            random_vals = torch.rand_like(xreal)
+            random_vals = torch.rand_like(x)
             ni = (random_vals < prob).type(self.dtype)  # fr% chance
         return ni
     
     def get_epsilon(self, ni: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        self._init_all()
-        # xreal = torch.abs(torch.tensor(x)).squeeze(0)
-        xreal = torch.abs(x)
-        return (2 * self.bounds * torch.rand(xreal.shape, device=self.device, dtype=self.dtype) - self.bounds) * ni
+        return (2 * self.bounds * torch.rand(x.shape, device=self.device, dtype=self.dtype) - self.bounds) * ni
     
     def get_x_Hi(self, epsilon: torch.Tensor, ni: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        self._init_all()
         return x + epsilon * ni
 
     def _sample(self, Nsims: int) -> dict:
-        self._init_all()
         sample = {} 
 
-        Theta = self.get_theta(Nsims) ## note i have built in the bkg method to theta to make this cleaner
-        Mu = self.get_mu(Theta)
-        X0_c = self.get_x_H0(Mu)
-        X0 = torch.abs(X0_c)
-        Ni = self.get_ni(X0)
-        Epsilon = self.get_epsilon(Ni, X0)
-        Xi = self.get_x_Hi(Epsilon, Ni, X0)
+        theta = self.get_theta(Nsims) ## note i have built in the bkg method to theta to make this cleaner
+        mu = self.get_mu(theta)
+        x0 = self.get_x_H0(mu)
+        ni = self.get_ni(x0)
+        epsilon = self.get_epsilon(ni, x0)
+        xi = self.get_x_Hi(epsilon, ni, x0)
 
-        sample.update({'theta':Theta,'mu':Mu, 'x0': X0, 'x0_c':X0_c,
-                       'epsilon': Epsilon, 'ni': Ni, 'xi': Xi})
+        sample.update({'theta':theta,'mu':mu, 'x0': x0, 
+                       'epsilon': epsilon, 'ni': ni, 'xi': xi})
     
         return sample
     
     def _resample(self, sample: dict) -> dict:
-        self._init_all()
         sample['x0'] = self.get_x_H0(sample['mu'])
         sample['ni'] = self.get_ni(sample['x0'])
         sample['epsilon'] = self.get_epsilon(sample['ni'], sample['x0'])
@@ -341,7 +382,6 @@ class GW_Additive_F_Correlated(GW_Additive_F):
         self.correlation_scales = correlation_scales
 
     def _conv1d(self, ni: torch.Tensor, c: int) -> torch.Tensor:
-        self._init_all()
         w = torch.linspace(-3, 3, 1+int(c)*2, device=ni.device, dtype=ni.dtype).unsqueeze(0).unsqueeze(0)
         w = torch.exp(-0.5*w**2)
         w = w/w.max() # Normalize maximum to 1
@@ -349,7 +389,6 @@ class GW_Additive_F_Correlated(GW_Additive_F):
         return y
     
     def get_correlation(self, ni, epsilon) -> torch.Tensor:
-        self._init_all()
         if isinstance(self.bounds, float) or isinstance(self.bounds, int):
             cc = torch.stack([self._conv1d(ni*epsilon, int(c)) for c in self.correlation_scales], axis=1)
         elif len(self.bounds)==len(self.correlation_scales):
@@ -357,34 +396,30 @@ class GW_Additive_F_Correlated(GW_Additive_F):
         return cc
     
     def get_epsilon(self, ni: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        self._init_all()
         if isinstance(self.bounds, float) or isinstance(self.bounds, int):
             eps = (2 * self.bounds * torch.rand(x.shape, device=self.device, dtype=self.dtype) - self.bounds) * ni
         elif len(self.bounds)==len(self.correlation_scales):
-            eps = (2 * self.bounds.unsqueeze(0).unsqueeze(2) * 
-                   torch.rand(x.shape, device=self.device, dtype=self.dtype
-                              ).unsqueeze(1).to(self.dtype) - self.bounds.unsqueeze(0).unsqueeze(2)
-                              ) * ni.unsqueeze(1)
+            eps = (2 * self.bounds.unsqueeze(0).unsqueeze(2) * torch.rand(x.shape, device=self.device, dtype=self.dtype).unsqueeze(1).to(self.dtype) - self.bounds.unsqueeze(0).unsqueeze(2)) * ni.unsqueeze(1)
         return eps.to(self.dtype)
         
     def get_x_Hi(self, cni: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        self._init_all()
         return x +  cni
     
     def _sample(self, Nsims: int) -> dict:
-        self._init_all()
         sample = {}
 
-        Theta = self.get_theta(Nsims)
-        Mu = self.get_mu(Theta)
-        X0_c = self.get_x_H0(Mu)
-        X0 = torch.abs(X0_c)
-        Ni = self.get_ni(X0)
-        Epsilon = self.get_epsilon(Ni, X0)
-        Cni = self.get_correlation(Ni, Epsilon)
-        Xi = self.get_x_Hi(Cni, X0.unsqueeze(1))
+        theta = self.get_theta(Nsims)
+        mu = self.get_mu(theta)
+        x0 = self.get_x_H0(mu)
+        
+        ni = self.get_ni(x0)
+        epsilon = self.get_epsilon(ni, x0)
+        cni = self.get_correlation(ni, epsilon)
+        xi = self.get_x_Hi(cni, x0.unsqueeze(1))
 
-        sample.update({'theta':Theta, 'mu':Mu, 'x0_c':X0_c,
-                       'x0': X0, 'epsilon': Epsilon, 
-                       'ni': Ni, 'cni': Cni, 'xi': Xi})
+        sample.update({'theta':theta, 'mu':mu,
+                       'x0': x0, 'epsilon': epsilon, 
+                       'ni': ni, 'cni': cni, 'xi': xi})
         return sample
+
+
