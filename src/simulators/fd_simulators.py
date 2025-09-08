@@ -76,10 +76,10 @@ class Base_GW1501914:
 
     def _initialise_gw(self):
         self.event_time = event_gps('GW150914')
-        print(f'Fetching {self.data_window}s of data from {self.ifo}. Will take <4mins.')
+        # print(f'Fetching {self.data_window}s of data from {self.ifo}. Will take <4mins.')
         self.gwosc_data = TimeSeries.fetch_open_data(self.ifo, self.event_time-2*self.data_window, 
                                                      self.event_time-self.data_window, sample_rate=4096)
-        print(f'Calculating PSD for FFT window length {self.psd_window}s.')
+        # print(f'Calculating PSD for FFT window length {self.psd_window}s.')
         self.psd = self.gwosc_data.psd(fftlength=self.psd_window)
         self.frequencies = self.psd.frequencies.value
         self.tukey_alpha = 1/self.psd_window
