@@ -118,51 +118,54 @@ class Network_epsilon_complex(torch.nn.Module):
 ############################################################################################################
 ############################################################################################################
 ############################################################################################################
-    
-batch_size = 128
+def main():
+    batch_size = 128
 
-dm = OnTheFlyDataModule(simulator, Nsims_per_epoch=400*batch_size, batch_size=batch_size, num_workers=31)
+    dm = OnTheFlyDataModule(simulator, Nsims_per_epoch=400*batch_size, batch_size=batch_size, num_workers=31)
 
-network_epsilon = Network_epsilon_complex(nbins=simulator.Nbins)
-model = NewLossModule_withBounds(network_epsilon, learning_rate=3e-3)
-trainer = pl.Trainer(
-    accelerator="gpu", 
-    max_epochs=25, 
-    precision=64,
-    # fast_dev_run=True
-)
-trainer.fit(model, dm)
-network_epsilon.cuda().eval();
+    network_epsilon = Network_epsilon_complex(nbins=simulator.Nbins)
+    model = NewLossModule_withBounds(network_epsilon, learning_rate=3e-3)
+    trainer = pl.Trainer(
+        accelerator="gpu", 
+        max_epochs=25, 
+        precision=64,
+        # fast_dev_run=True
+    )
+    trainer.fit(model, dm)
+    network_epsilon.cuda().eval();
 
-############################################################################################################
-############################################################################################################
-############################################################################################################
+    ############################################################################################################
+    ############################################################################################################
+    ############################################################################################################
 
-torch.save(network_epsilon, f'networks/network_GW_complex')
-torch.save(model, f'networks/model_GW_complex')
-netid = 'GW_complex'
+    torch.save(network_epsilon, f'networks/network_GW_complex')
+    torch.save(model, f'networks/model_GW_complex')
+    netid = 'GW_complex'
 
-############################################################################################################
-############################################################################################################
-############################################################################################################
+    ############################################################################################################
+    ############################################################################################################
+    ############################################################################################################
 
-# Convert tensors to scalars if they are tensors
-train_loss_history = [loss.item() if hasattr(loss, 'item') else loss for loss in model.train_loss_history]
-bounds_history = [bound.item() if hasattr(bound, 'item') else bound for bound in model.bounds_history]
+    # Convert tensors to scalars if they are tensors
+    train_loss_history = [loss.item() if hasattr(loss, 'item') else loss for loss in model.train_loss_history]
+    bounds_history = [bound.item() if hasattr(bound, 'item') else bound for bound in model.bounds_history]
 
-# Generate a list of epoch numbers
-epochs = range(1, len(train_loss_history) + 1)
+    # Generate a list of epoch numbers
+    epochs = range(1, len(train_loss_history) + 1)
 
-fig, axs = plt.subplots(1, 2, figsize=(10, 3))
-# Plot Training Loss over Epochs
-axs[0].plot(epochs, train_loss_history)
-axs[0].set_xlabel('Epoch')
-axs[0].set_ylabel('Training Loss')
-# Plot Bounds over Epochs
-axs[1].plot(epochs, bounds_history, label='Bounds', color='orange')
-axs[1].set_xlabel('Epoch')
-axs[1].set_ylabel('Bounds')
+    fig, axs = plt.subplots(1, 2, figsize=(10, 3))
+    # Plot Training Loss over Epochs
+    axs[0].plot(epochs, train_loss_history)
+    axs[0].set_xlabel('Epoch')
+    axs[0].set_ylabel('Training Loss')
+    # Plot Bounds over Epochs
+    axs[1].plot(epochs, bounds_history, label='Bounds', color='orange')
+    axs[1].set_xlabel('Epoch')
+    axs[1].set_ylabel('Bounds')
 
 
-plt.tight_layout()
-plt.savefig(f'figs/{netid}/bounds.png', dpi=300)
+    plt.tight_layout()
+    plt.savefig(f'figs/{netid}/bounds.png', dpi=300)
+
+if __name__ == "__main__":
+    main()
