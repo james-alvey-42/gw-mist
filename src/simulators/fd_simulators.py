@@ -10,6 +10,7 @@ from ripple.waveforms import IMRPhenomD, IMRPhenomXAS
 from jimgw.single_event.detector import H1, L1
 from functools import partial
 import sys
+import plotfancy as pf
 
 sys.path.append('../../mist-base/GW')
 sys.path.append('../../')
@@ -17,6 +18,7 @@ sys.path.append('../../')
 import matplotlib.pyplot as plt
 from gwpy.timeseries import TimeSeries
 from gwosc.datasets import event_gps
+
 
 defaults = {
     "approximant": "IMRPhenomD",
@@ -219,6 +221,7 @@ class Base_GW1501914:
     
     
 
+
 class GW_Additive_F(Base_GW1501914):
     def __init__(self, settings: dict = {}, stoch_mu=True, device='cpu', dtype=torch.float64, 
                  bkg=True,bounds=5,fraction=None,sample_fraction=None):
@@ -269,6 +272,27 @@ class GW_Additive_F(Base_GW1501914):
         noise = torch.tensor(self.get_noise_fd(x_shape[0]))
         return mu+noise
     
+    # def get_ni(self, x: torch.Tensor) -> torch.Tensor:
+    #     self._init_all()
+    #     # xreal = torch.abs(torch.tensor(x)).squeeze(0)
+    #     xreal = torch.abs(x)
+    #     if self.fraction is None:
+    #         """Standard basis vectors"""
+    #         batch_size, N_bins = xreal.shape
+    #         ni = torch.zeros(batch_size, N_bins, device=self.device, dtype=self.dtype)
+    #         indices = torch.randint(0, N_bins, (batch_size,), device=self.device)
+    #         ni[torch.arange(batch_size), indices] = 1
+    #     else:
+    #         """Fraction of bins are distorted"""
+    #         if self.sample_fraction:
+    #             fr = np.random.uniform(0.01, self.fraction)
+    #         else:   
+    #             fr = self.fraction
+    #         prob = fr*self.Nbins/100
+    #         random_vals = torch.rand_like(xreal)
+    #         ni = (random_vals < prob).type(self.dtype)  # fr% chance
+    #     return ni
+    
     def get_ni(self, x: torch.Tensor) -> torch.Tensor:
         self._init_all()
         # xreal = torch.abs(torch.tensor(x)).squeeze(0)
@@ -276,7 +300,7 @@ class GW_Additive_F(Base_GW1501914):
         if self.fraction is None:
             """Standard basis vectors"""
             batch_size, N_bins = xreal.shape
-            ni = torch.zeros(batch_size, N_bins, device=self.device, dtype=self.dtype)
+            ni = torch.zeros(batch_size, N_bins, device=self.device, dtype=self.complex_dtype)
             indices = torch.randint(0, N_bins, (batch_size,), device=self.device)
             ni[torch.arange(batch_size), indices] = 1
         else:
@@ -287,14 +311,17 @@ class GW_Additive_F(Base_GW1501914):
                 fr = self.fraction
             prob = fr*self.Nbins/100
             random_vals = torch.rand_like(xreal)
-            ni = (random_vals < prob).type(self.dtype)  # fr% chance
+            ni = (random_vals < prob).type(self.complex_dtype)  # fr% chance
         return ni
-    
-    def get_epsilon(self, ni: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+
+    def get_epsilon(self, ni: torch.Tensor, x: torch.Tensor, real:bool=True) -> torch.Tensor:
         self._init_all()
         # xreal = torch.abs(torch.tensor(x)).squeeze(0)
         xreal = torch.abs(x)
-        return (2 * self.bounds * torch.rand(xreal.shape, device=self.device, dtype=self.dtype) - self.bounds) * ni
+        if real:
+            return (2 * self.bounds * torch.rand(xreal.shape, device=self.device, dtype=self.dtype).real - self.bounds) * ni
+        else:
+            return (2 * self.bounds * torch.rand(xreal.shape, device=self.device, dtype=self.dtype) - self.bounds) * ni
     
     def get_x_Hi(self, epsilon: torch.Tensor, ni: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         self._init_all()
@@ -306,13 +333,17 @@ class GW_Additive_F(Base_GW1501914):
 
         Theta = self.get_theta(Nsims) ## note i have built in the bkg method to theta to make this cleaner
         Mu = self.get_mu(Theta)
-        X0_c = self.get_x_H0(Mu)
-        X0 = torch.abs(X0_c)
+        # X0_c = self.get_x_H0(Mu)
+        # X0 = torch.abs(X0_c)
+        X0 = self.get_x_H0(Mu)
         Ni = self.get_ni(X0)
         Epsilon = self.get_epsilon(Ni, X0)
         Xi = self.get_x_Hi(Epsilon, Ni, X0)
 
-        sample.update({'theta':Theta,'mu':Mu, 'x0': X0, 'x0_c':X0_c,
+        # sample.update({'theta':Theta,'mu':Mu, 'x0': X0, 'x0_c':X0_c,
+        #                'epsilon': Epsilon, 'ni': Ni, 'xi': Xi})
+        
+        sample.update({'theta':Theta,'mu':Mu, 'x0': X0,
                        'epsilon': Epsilon, 'ni': Ni, 'xi': Xi})
     
         return sample
@@ -328,6 +359,7 @@ class GW_Additive_F(Base_GW1501914):
     def sample(self, Nsims: int = 1) -> dict:
         sample = self._sample(Nsims)
         return sample
+
 
 
 class GW_Additive_F_Correlated(GW_Additive_F):
