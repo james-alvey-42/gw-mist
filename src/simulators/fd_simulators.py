@@ -117,27 +117,59 @@ class Base_GW1501914:
         return x/prefactor
          
     
+    # def _load_posterior_samples(self):
+    #     # print(f"Loading posterior samples from {self.posterior_samples_path}")
+    #     self.posterior_samples = np.load(self.posterior_samples_path)
+    #     self.parameter_names = [
+    #         "M_c",
+    #         "q",
+    #         "s1_z",
+    #         "s2_z",
+    #         "d_L",
+    #         "t_c",
+    #         "phase_c",
+    #         "iota",
+    #         "ra",
+    #         "dec",
+    #         "psi",
+    #     ]
+    #     for param_name in self.posterior_samples.files:
+    #         if param_name not in self.parameter_names:
+    #             raise ValueError(
+    #                 f"Parameter {param_name} not recognized in posterior file"
+    #             )
+    #     self.posterior_array = np.vstack(
+    #         [self.posterior_samples[name] for name in self.parameter_names]
+    #     ).T
+    #     self.posterior_array[:, 1] = (self.posterior_array[:, 1]) / (
+    #         1.0 + self.posterior_array[:, 1]
+    #     ) ** 2  # q -> eta = q / (1 + q)^2
+    #     self.posterior_array[:, 5] = (
+    #         self.epoch + self.posterior_array[:, 5]
+    #     )  # t_c -> t_c + epoch
+
     def _load_posterior_samples(self):
         # print(f"Loading posterior samples from {self.posterior_samples_path}")
-        self.posterior_samples = np.load(self.posterior_samples_path)
-        self.parameter_names = [
-            "M_c",
-            "q",
-            "s1_z",
-            "s2_z",
-            "d_L",
-            "t_c",
-            "phase_c",
-            "iota",
-            "ra",
-            "dec",
-            "psi",
-        ]
-        for param_name in self.posterior_samples.files:
-            if param_name not in self.parameter_names:
-                raise ValueError(
-                    f"Parameter {param_name} not recognized in posterior file"
-                )
+        with np.load(self.posterior_samples_path) as f:
+            self.posterior_samples = {key: f[key] for key in f.files}
+            self.parameter_names = [
+                "M_c",
+                "q",
+                "s1_z",
+                "s2_z",
+                "d_L",
+                "t_c",
+                "phase_c",
+                "iota",
+                "ra",
+                "dec",
+                "psi",
+            ]
+            for param_name in self.posterior_samples.keys():
+                if param_name not in self.parameter_names:
+                    raise ValueError(
+                        f"Parameter {param_name} not recognized in posterior file"
+                    )
         self.posterior_array = np.vstack(
             [self.posterior_samples[name] for name in self.parameter_names]
         ).T
@@ -293,14 +325,15 @@ class GW_Additive_F(Base_GW1501914):
     #         ni = (random_vals < prob).type(self.dtype)  # fr% chance
     #     return ni
     
-    def get_ni(self, x: torch.Tensor) -> torch.Tensor:
+    def get_ni(self, x: torch.Tensor, real:bool=True) -> torch.Tensor:
+        dt = self.dtype if real else self.complex_dtype
         self._init_all()
         # xreal = torch.abs(torch.tensor(x)).squeeze(0)
         xreal = torch.abs(x)
         if self.fraction is None:
             """Standard basis vectors"""
             batch_size, N_bins = xreal.shape
-            ni = torch.zeros(batch_size, N_bins, device=self.device, dtype=self.complex_dtype)
+            ni = torch.zeros(batch_size, N_bins, device=self.device, dtype=dt)
             indices = torch.randint(0, N_bins, (batch_size,), device=self.device)
             ni[torch.arange(batch_size), indices] = 1
         else:
@@ -311,7 +344,7 @@ class GW_Additive_F(Base_GW1501914):
                 fr = self.fraction
             prob = fr*self.Nbins/100
             random_vals = torch.rand_like(xreal)
-            ni = (random_vals < prob).type(self.complex_dtype)  # fr% chance
+            ni = (random_vals < prob).type(dt)  # fr% chance
         return ni
 
     def get_epsilon(self, ni: torch.Tensor, x: torch.Tensor, real:bool=True) -> torch.Tensor:
@@ -319,15 +352,15 @@ class GW_Additive_F(Base_GW1501914):
         # xreal = torch.abs(torch.tensor(x)).squeeze(0)
         xreal = torch.abs(x)
         if real:
-            return (2 * self.bounds * torch.rand(xreal.shape, device=self.device, dtype=self.dtype).real - self.bounds) * ni
+            return (2 * self.bounds * torch.rand(xreal.shape, device=self.device, dtype=self.complex_dtype).real - self.bounds) * ni
         else:
-            return (2 * self.bounds * torch.rand(xreal.shape, device=self.device, dtype=self.dtype) - self.bounds) * ni
+            return (2 * self.bounds * torch.rand(xreal.shape, device=self.device, dtype=self.complex_dtype) - self.bounds) * ni
     
     def get_x_Hi(self, epsilon: torch.Tensor, ni: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         self._init_all()
         return x + epsilon * ni
 
-    def _sample(self, Nsims: int) -> dict:
+    def _sample(self, Nsims: int, Real:bool=True) -> dict:
         self._init_all()
         sample = {} 
 
@@ -336,8 +369,8 @@ class GW_Additive_F(Base_GW1501914):
         # X0_c = self.get_x_H0(Mu)
         # X0 = torch.abs(X0_c)
         X0 = self.get_x_H0(Mu)
-        Ni = self.get_ni(X0)
-        Epsilon = self.get_epsilon(Ni, X0)
+        Ni = self.get_ni(X0, real=Real)
+        Epsilon = self.get_epsilon(Ni, X0, real=Real)
         Xi = self.get_x_Hi(Epsilon, Ni, X0)
 
         # sample.update({'theta':Theta,'mu':Mu, 'x0': X0, 'x0_c':X0_c,
@@ -356,8 +389,8 @@ class GW_Additive_F(Base_GW1501914):
         sample['xi'] = self.get_x_Hi(sample['epsilon'], sample['ni'], sample['x0'])
         return sample
     
-    def sample(self, Nsims: int = 1) -> dict:
-        sample = self._sample(Nsims)
+    def sample(self, Nsims: int = 1, REAL:bool=True) -> dict:
+        sample = self._sample(Nsims,)
         return sample
 
 
