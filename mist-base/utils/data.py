@@ -140,7 +140,7 @@ class BaseDataModule(pl.LightningDataModule):
             shuffle=shuffle,
             pin_memory=True,
             num_workers=self.num_workers,
-            # persistent_workers=True
+            persistent_workers=True
         )
 
     def train_dataloader(self):
