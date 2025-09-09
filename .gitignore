@@ -34,6 +34,7 @@ data/results/*
 !data/processed/.gitkeep
 !data/results/.gitkeep
 
+
 # Jupyter Notebook
 .ipynb_checkpoints
 
@@ -93,6 +94,8 @@ wandb/
 *.jpg
 *.jpeg
 *.gif
+*.npy
+*.npz
 !notebooks/week7/for_noemi/gifs/*.gif
 
 
