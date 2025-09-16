@@ -84,12 +84,12 @@ class Network_epsilon(torch.nn.Module):
         noise_block = torch.nan_to_num(x['noise'], nan=0, posinf=0, neginf=0)
         x0_block = torch.nan_to_num(x['x0'], nan=0, posinf=0, neginf=0)
         # mu_block = torch.nan_to_num(x['mu'], nan=0, posinf=0, neginf=0)
-        ni = torch.nan_to_num(x['ni'], nan=0, posinf=0, neginf=0)
+        ni = torch.nan_to_num(x['ni'], nan=0, posinf=0, neginf=0).real
         
         ###########################################
-        epsilon_sim =  (2 * self.bounds() * torch.rand(x0_block.shape, 
+        epsilon_sim =  (2 * self.bounds() * torch.rand(torch.abs(x0_block).shape, 
                                                            device= x0_block.device, 
-                                                           dtype= x0_block.dtype) - self.bounds()) * ni
+                                                           dtype= torch.abs(x0_block).dtype) - self.bounds()) * ni
         ###########################################
 
         data_mu = torch.abs(x0_block)+epsilon_sim
