@@ -298,11 +298,9 @@ class GW_Additive_F(Base_GW1501914):
         mu = torch.tensor(self._fd_waveform_batched(theta))
         return self.to_type_complex(mu)
     
-    def get_x_H0(self, mu:torch.Tensor, mag=True) -> torch.Tensor:
+    def get_x_H0(self, m:torch.Tensor,n:torch.Tensor, mag=True) -> torch.Tensor:
         self._init_all()
-        x_shape = mu.shape
-        noise = torch.tensor(self.get_noise_fd(x_shape[0]))
-        return mu+noise
+        return m+n
     
     # def get_ni(self, x: torch.Tensor) -> torch.Tensor:
     #     self._init_all()
@@ -359,6 +357,10 @@ class GW_Additive_F(Base_GW1501914):
     def get_x_Hi(self, epsilon: torch.Tensor, ni: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         self._init_all()
         return x + epsilon * ni
+    
+    def get_x_Hi_real(self,epsilon: torch.Tensor, ni: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+        self._init_all()
+        return torch.abs(x) + epsilon.real*ni
 
     def _sample(self, Nsims: int, Real:bool=True) -> dict:
         self._init_all()
@@ -368,16 +370,18 @@ class GW_Additive_F(Base_GW1501914):
         Mu = self.get_mu(Theta)
         # X0_c = self.get_x_H0(Mu)
         # X0 = torch.abs(X0_c)
-        X0 = self.get_x_H0(Mu)
+        Noise = torch.tensor(self.get_noise_fd(Mu.shape[0]))
+        X0 = self.get_x_H0(Mu, Noise)
         Ni = self.get_ni(X0, real=Real)
         Epsilon = self.get_epsilon(Ni, X0, real=Real)
         Xi = self.get_x_Hi(Epsilon, Ni, X0)
+        Xi_r = self.get_x_Hi_real(Epsilon, Ni, X0)
 
         # sample.update({'theta':Theta,'mu':Mu, 'x0': X0, 'x0_c':X0_c,
         #                'epsilon': Epsilon, 'ni': Ni, 'xi': Xi})
         
-        sample.update({'theta':Theta,'mu':Mu, 'x0': X0,
-                       'epsilon': Epsilon, 'ni': Ni, 'xi': Xi})
+        sample.update({'theta':Theta,'mu':Mu,'noise':Noise, 'x0': X0,
+                       'epsilon': Epsilon, 'ni': Ni, 'xi': Xi, 'xi_r':Xi_r})
     
         return sample
     
