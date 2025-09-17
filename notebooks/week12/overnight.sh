@@ -1,0 +1,2 @@
+python semicomplex_trainer.py
+python newtrain2.py
