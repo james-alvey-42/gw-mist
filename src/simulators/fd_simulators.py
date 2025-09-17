@@ -11,6 +11,7 @@ from jimgw.single_event.detector import H1, L1
 from functools import partial
 import sys
 import plotfancy as pf
+import time
 
 sys.path.append('../../mist-base/GW')
 sys.path.append('../../')
@@ -72,7 +73,6 @@ class Base_GW1501914:
         self.posterior_samples_path = self.settings.get(
             "posterior_samples_path", "../../mist-base/GW/GW150814_posterior_samples.npz"
         )
-        self.key = jax.random.PRNGKey(42)
 
     def _initialise_gw(self):
         self.event_time = event_gps('GW150914')
@@ -195,7 +195,7 @@ class Base_GW1501914:
         nbins = len(self.gwosc_data.crop(ref-self.psd_window/2, ref+self.psd_window/2))
         alldata_raw = jnp.array(self.gwosc_data)
         max_start_index = alldata_raw.shape[0] - nbins
-        start_indices = jax.random.randint(self.key, shape=(nsamples,), minval=0, maxval=max_start_index + 1)
+        start_indices = jnp.array(np.random.randint(0, max_start_index + 1, size=nsamples))
         offsets = jnp.arange(nbins)
         indices = start_indices[:, None] + offsets
         return alldata_raw[indices]
