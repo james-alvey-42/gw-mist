@@ -52,7 +52,7 @@ class Network_epsilon(torch.nn.Module):
         
         self.nbins = nbins
 
-        self.logvariance = torch.nn.Parameter(torch.ones(self.nbins)*5)
+        self.logvariance = torch.nn.Parameter(torch.ones(self.nbins)*10)
 
         self.net = ResidualNet(1, 1, hidden_features=128, num_blocks=2, kernel_size=1, padding=0) 
         self.mu_predictor = torch.nn.Sequential(
@@ -76,7 +76,7 @@ class Network_epsilon(torch.nn.Module):
         return self.epsilon(x) / self.logvariance.exp().sqrt()  # [B, N_bins]
     
     def bounds(self):
-        return self.logvariance.detach().exp().sqrt().mean(-1) * 5
+        return self.logvariance.detach().exp().sqrt().mean(-1) * 10
 
         
     def forward(self, x):
@@ -104,7 +104,7 @@ class Network_epsilon(torch.nn.Module):
 
         # net evaluation_e
         net_epsilon = self.epsilon(data_mu)
-        mask = ( ni != 0 )  
+        mask = ( ni.real != 0 )  
         squared_error_e = (net_epsilon - epsilon_sim)**2                                         # [B, N_bins]
         l_e = squared_error_e / (self.logvariance.exp() + 1e-21) + self.logvariance                   # [B, N_bins]
         l_e_return = (l_e * mask.float()).sum() * 0.5
@@ -203,7 +203,7 @@ def main():
     ############################################################################################################
     ############################################################################################################
     ############################################################################################################
-    netid = 'GW_semicomplex2'
+    netid = 'GW_semicomplex3'
     torch.save(network_epsilon, f'networks/network_{netid}')
     torch.save(model, f'networks/model_{netid}')
 
