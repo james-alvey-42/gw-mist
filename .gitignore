@@ -97,6 +97,7 @@ wandb/
 *.npy
 *.npz
 !notebooks/week7/for_noemi/gifs/*.gif
+!notebooks/week12/for_noemi/*.png
 
 
 # Prevent specific backup
