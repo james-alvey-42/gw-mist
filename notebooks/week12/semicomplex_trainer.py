@@ -189,7 +189,7 @@ def main():
     model = NewLossModule_withBounds(network_epsilon, learning_rate=3e-3)
     trainer = pl.Trainer(
         accelerator="gpu", 
-        max_epochs=30, 
+        max_epochs=50, 
         precision=64,
         # fast_dev_run=True
     )
@@ -199,7 +199,7 @@ def main():
     ############################################################################################################
     ############################################################################################################
     ############################################################################################################
-    netid = 'GW_semicomplex3'
+    netid = 'GW_semicomplex_long'
     torch.save(network_epsilon, f'networks/network_{netid}')
     torch.save(model, f'networks/model_{netid}')
 
