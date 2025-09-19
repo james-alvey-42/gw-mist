@@ -72,7 +72,7 @@ class Network_epsilon(torch.nn.Module):
         return self.epsilon(x) / self.logvariance.exp().sqrt()  # [B, N_bins]
     
     def bounds(self):
-        return self.logvariance.detach().exp().sqrt().mean(-1) * 5
+        return self.logvariance.detach().exp().sqrt().mean(-1) * 10
 
         
     def forward(self, x):
