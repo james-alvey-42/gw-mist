@@ -113,6 +113,7 @@ class BaseDataModule(pl.LightningDataModule):
         on_after_load_sample: Optional[Callable] = None,
         val_fraction: float = 0.2,
         test_fraction: float = 0.1,
+        persistent_workers = False
     ):
         super().__init__()
         self.batch_size = batch_size
@@ -120,6 +121,7 @@ class BaseDataModule(pl.LightningDataModule):
         self.on_after_load_sample = on_after_load_sample
         self.val_fraction = val_fraction
         self.test_fraction = test_fraction
+        self.persistent_workers = persistent_workers
 
     def setup(self, stage: Optional[str] = None):
         """
@@ -140,7 +142,7 @@ class BaseDataModule(pl.LightningDataModule):
             shuffle=shuffle,
             pin_memory=True,
             num_workers=self.num_workers,
-            persistent_workers=True
+            persistent_workers=self.persistent_workers
         )
 
     def train_dataloader(self):

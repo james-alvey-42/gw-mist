@@ -9,10 +9,7 @@ torch.set_float32_matmul_precision('medium')
 import multiprocessing as mp
 mp.set_start_method("spawn", force=True)
 
-import multiprocessing
-# multiprocessing.set_start_method('spawn')
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
 
 import os, sys
 
@@ -21,9 +18,8 @@ sys.path.append('../../')
 
 from src.simulators.fd_simulators import GW_Additive_F, GW_Additive_F_Correlated
 from simulators.utils import *
-from utils.data import OnTheFlyDataModule, StoredDataModule
-from utils.module import CustomLossModule_withBounds, BCELossModule, NewLossModule_withBounds
-from models.online_norm import OnlineStandardizingLayer
+from utils.data import OnTheFlyDataModule
+from utils.module import NewLossModule_withBounds
 from models.resnet_1d import ResidualNet
 
 import plotfancy as pf
@@ -52,7 +48,7 @@ class Network_epsilon(torch.nn.Module):
         
         self.nbins = nbins
 
-        self.logvariance = torch.nn.Parameter(torch.ones(self.nbins)*10)
+        self.logvariance = torch.nn.Parameter(torch.ones(self.nbins)*5)
 
         self.net = ResidualNet(1, 1, hidden_features=128, num_blocks=2, kernel_size=1, padding=0) 
         self.mu_predictor = torch.nn.Sequential(
@@ -76,7 +72,7 @@ class Network_epsilon(torch.nn.Module):
         return self.epsilon(x) / self.logvariance.exp().sqrt()  # [B, N_bins]
     
     def bounds(self):
-        return self.logvariance.detach().exp().sqrt().mean(-1) * 10
+        return self.logvariance.detach().exp().sqrt().mean(-1) * 5
 
         
     def forward(self, x):
@@ -87,9 +83,9 @@ class Network_epsilon(torch.nn.Module):
         ni = torch.nan_to_num(x['ni'], nan=0, posinf=0, neginf=0).real
         
         ###########################################
-        epsilon_sim =  (2 * self.bounds() * torch.rand(torch.abs(x0_block).shape, 
+        epsilon_sim =  2 * self.bounds() * (torch.rand(torch.abs(x0_block).shape, 
                                                            device= x0_block.device, 
-                                                           dtype= torch.abs(x0_block).dtype) - self.bounds()) * ni
+                                                           dtype= torch.abs(x0_block).dtype) - 1) * ni
         ###########################################
 
         data_mu = torch.abs(x0_block)+epsilon_sim
@@ -187,7 +183,7 @@ class Network_epsilon(torch.nn.Module):
 def main():
     batch_size = 128
 
-    dm = OnTheFlyDataModule(simulator, Nsims_per_epoch=400*batch_size, batch_size=batch_size, num_workers=31)
+    dm = OnTheFlyDataModule(simulator, Nsims_per_epoch=400*batch_size, batch_size=batch_size, num_workers=31, persistent_workers=True)
 
     network_epsilon = Network_epsilon(nbins=simulator.Nbins)
     model = NewLossModule_withBounds(network_epsilon, learning_rate=3e-3)
