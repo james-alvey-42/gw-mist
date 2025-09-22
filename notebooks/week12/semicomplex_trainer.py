@@ -36,7 +36,7 @@ quantiles_long = np.array([7.11978022e-04, 7.96148769e-03, 5.19968566e-02, 2.145
  5.87800876e-01, 1.17737921e+00, 1.91882754e+00, 2.75067576e+00,
  3.63463655e+00, 4.55164698e+00, 5.49045819e+00])
 
-simulator = GW_Additive_F(bkg=True, fraction=0.2)
+simulator = GW_Additive_F(bkg=False, fraction=0.9)
 
 ############################################################################################################
 ############################################################################################################
@@ -72,7 +72,7 @@ class Network_epsilon(torch.nn.Module):
         return self.epsilon(x) / self.logvariance.exp().sqrt()  # [B, N_bins]
     
     def bounds(self):
-        return self.logvariance.detach().exp().sqrt().mean(-1) * 10
+        return self.logvariance.detach().exp().sqrt().mean(-1) * 5
 
         
     def forward(self, x):
@@ -100,7 +100,7 @@ class Network_epsilon(torch.nn.Module):
 
         # net evaluation_e
         net_epsilon = self.epsilon(data_mu)
-        mask = ( ni.real != 0 )  
+        mask = ( ni != 0 )  
         squared_error_e = (net_epsilon - epsilon_sim)**2                                         # [B, N_bins]
         l_e = squared_error_e / (self.logvariance.exp() + 1e-21) + self.logvariance                   # [B, N_bins]
         l_e_return = (l_e * mask.float()).sum() * 0.5
@@ -199,7 +199,7 @@ def main():
     ############################################################################################################
     ############################################################################################################
     ############################################################################################################
-    netid = 'GW_semicomplex_long'
+    netid = 'GW_semicomplex_silent'
     torch.save(network_epsilon, f'networks/network_{netid}')
     torch.save(model, f'networks/model_{netid}')
 
