@@ -40,7 +40,7 @@ quantiles_long = np.array([7.11978022e-04, 7.96148769e-03, 5.19968566e-02, 2.145
  5.87800876e-01, 1.17737921e+00, 1.91882754e+00, 2.75067576e+00,
  3.63463655e+00, 4.55164698e+00, 5.49045819e+00])
 
-simulator = GW_Additive_F(bkg=True, fraction=0.2)
+simulator = GW_Additive_F(bkg=False, fraction=0.9)
 
 ############################################################################################################
 ############################################################################################################
@@ -127,7 +127,7 @@ def main():
     model = NewLossModule_withBounds(network_epsilon, learning_rate=3e-3)
     trainer = pl.Trainer(
         accelerator="gpu", 
-        max_epochs=30, 
+        max_epochs=50, 
         precision=64,
         # fast_dev_run=True
     )
@@ -138,7 +138,7 @@ def main():
     ############################################################################################################
     ############################################################################################################
 
-    netid = 'GW_complex'
+    netid = 'GW_complex_silent'
     torch.save(network_epsilon, f'networks/network_{netid}')
     torch.save(model, f'networks/model_{netid}')
 
