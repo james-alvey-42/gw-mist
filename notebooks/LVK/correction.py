@@ -4,12 +4,6 @@ import h5py
 import matplotlib.pyplot as plt
 import tqdm
 
-# --- Placeholder Initializations ---
-# The original script was missing definitions for these variables.
-# You should replace these with your actual interferometer objects and data structures.
-# For example:
-# from bilby.gw.detector import InterferometerList
-# ifos = InterferometerList(['H1', 'L1'])
 ifos = [] 
 h_white_waveform = {ifo.name: [] for ifo in ifos}
 # --- End Placeholder Initializations ---
