@@ -86,6 +86,7 @@ wandb/
 *.h5
 *.hdf5
 *.npz
+*.gwf
 *.gz
 *.tar
 *.zip
